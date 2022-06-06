@@ -103,7 +103,7 @@ def parameters(L,m,Emax,eps):
 ###############################################################################
 #初期条件
 
-L = 20; Emax = 10; m = 1; eps = 10**(-6)
+L = 160; Emax = 1; m = 1; eps = 10**(-9)
 v, Emin, q, N_0, u = parameters(L,1,Emax,eps)
 T = L/v; phi = v/2
 
@@ -207,15 +207,14 @@ def Glassey(K,M):
         if ri_t < n_t: # Nm,N(m+1),Em から E(m+1)を求める
             Dn = np.diag([N_now[k]+N_next[k] for k in range(K)])
             D = dt*(0.5*Dx - 0.25*Dn)
-            S = Ik + np.dot(D,D)
-            Si = 2*np.linalg.inv(S)
-            SiD = np.dot(Si,D)
-            R_next = -np.array(R_now) + np.dot(Si,np.array(R_now)) - np.dot(SiD,np.array(I_now))
-            I_next = -np.array(I_now) + np.dot(SiD,np.array(R_now)) + np.dot(Si,np.array(I_now))
+            A = np.block([[Ik,D],[-D,Ik]])
+            b = np.linalg.solve(A,2*np.array([R_now[i] if i < K else I_now[i-K] for i in range(2*K)]))
+            R_next = -np.array(R_now) + b[:K]
+            I_next = -np.array(I_now) + b[K:]
             Rs.append(R_next); Is.append(I_next)
             R_now = R_next; I_now = I_next
             ri_t += 1
-            if ri_t%100 == 0:
+            if ri_t%10 == 0:
                 print(ri_t,n_t,M) #実行の進捗の目安として
         else:# N(m-1),Nm,Em から N(m+1)を求める
             E = np.array([R_now[k]**2 + I_now[k]**2 for k in range(K)])
@@ -224,26 +223,24 @@ def Glassey(K,M):
             Ns.append(N_next)
             n_t += 1
 
-
     WantToKnow = True #ノルム・エネルギーを知りたいとき
     WantToPlot = False #ノルム・エネルギーを描画したいとき
     if WantToKnow:
         DD = -2*np.eye(K-1,k=0) + np.eye(K-1,k=1) + np.eye(K-1,k=-1)
         DDI = np.linalg.inv(DD)
         Norm = [norm(Rs[i],dx) + norm(Is[i],dx) for i in range(len(Rs))]
-        #print("始点から終点までのノルム変化:",norm(Rs[-1],dx) + norm(Is[-1],dx)-norm(Rs[0],dx) - norm(Is[0],dx))
+        dNorm = [abs(Norm[i] - Norm[0]) for i in range(1,len(Rs))]
+        print("初期値に対するノルムの最大誤差:",max(dNorm))
         Energy = [energy(Rs[i+1],Is[i+1],Ns[i],Ns[i+1],DDI,dt,dx) for i in range(len(Rs)-1)]
-        #print(Energy)
-        #print("始点から終点までのエネルギー変化:",energy(Rs[-1],Is[-1],Ns[-2],Ns[-1],DDI,dt,dx)-energy(Rs[1],Is[1],Ns[0],Ns[1],DDI,dt,dx))
+        dEnergy = [abs(Energy[i] - Energy[0]) for i in range(len(Rs)-1)]
+        print("初期値に対するエネルギーの最大誤差:",max(dEnergy))
         if WantToPlot:
-            Time = [i for i in range(len(Rs))]
-            oridinal = [Norm[0] for i in range(len(Rs))]
+            Time = [i for i in range(len(Rs)-1)]
             Energy = [Energy[0]] + Energy
-            plt.plot(Time,Norm,label="Norm")
-            plt.plot(Time,oridinal,label="Norm_0")
-            plt.plot(Time,Energy,label="Energy")
+            plt.plot(Time,dNorm,label="Norm")
+            plt.plot(Time,dEnergy,label="Energy")
             plt.xlabel("time")
-            plt.ylabel("Norm and Energy")
+            plt.ylabel("errors of Norm and Energy")
             plt.legend()
             plt.show()
     return Rs,Is,Ns
@@ -260,8 +257,8 @@ def checking(K,M):
     WW = Emax/(2**0.5*vv)
     qq = q**2
 
-    RANGE = [i for i in range(M+1)]
-    #RANGE = [M] # 最終時刻での誤差だけ知りたいとき
+    #RANGE = [i for i in range(M+1)]
+    RANGE = [M] # 最終時刻での誤差だけ知りたいとき
     for i in RANGE:
         W = [WW*(k*dx - v*i*dt) for k in range(K)]
 
@@ -276,10 +273,10 @@ def checking(K,M):
     print("終点での各要素の誤差:",dists[-1])
     return (dx**2 + dt**2)**0.5,dists
 
-N = 10
+N = 2
 K = math.floor(L*N)
 M = math.floor(T*N**2)
 
 #print(Glassey(K,M))
 #print(checking(K,M))
-#checking(K,M)
+checking(K,M)
