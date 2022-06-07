@@ -106,7 +106,7 @@ def parameters(L,m,Emax,eps):
 ###############################################################################
 #初期条件
 
-L = 20; Emax = 10; m = 1; eps = 10**(-9)
+L = 160; Emax = 1; m = 1; eps = 10**(-9)
 v, Emin, q, N_0, u = parameters(L,1,Emax,eps)
 T = L/v; phi = v/2
 
@@ -184,13 +184,13 @@ def norm(v,dx):
 def FD(v,dx):
     return [(v[(k+1)%K] - v[k])/dx for k in range(len(v))]
 
-def energy(R,I,N1,N2,V,dt,dx):
+def energy(R,I,N,V,dt,dx):
     dR = FD(R,dx)
     dI = FD(I,dx)
     dV = FD(V,dx)
-    Energy = norm(dR,dx) + norm(dI,dx) + 0.25*norm(N1,dx) + 0.25*norm(N2,dx) + 0.5*norm(dV,dx)
+    Energy = norm(dR,dx) + norm(dI,dx) + 0.5*norm(N,dx) + 0.5*norm(dV,dx)
     for i in range(K):
-        Energy += 0.5*(N1[i]+N2[i])*(R[i]**2 + I[i]**2)*dx
+        Energy += N[i]*(R[i]**2 + I[i]**2)*dx
     return Energy
 
 #Glasseyスキーム本体
@@ -277,15 +277,14 @@ def DVDM1(K,M,eps):
     WantToPlot = True #ノルム・エネルギーを描画したいとき
     if WantToKnow:
         Norm = [norm(Rs[i],dx) + norm(Is[i],dx) for i in range(len(Rs))]
-        dNorm = [abs(Norm[i] - Norm[0]) for i in range(1,len(Rs))]
+        dNorm = [abs(Norm[i] - Norm[0]) for i in range(len(Rs))]
         print("初期値に対するノルムの最大誤差:",max(dNorm))
-        Energy = [energy(Rs[i+1],Is[i+1],Ns[i],Ns[i+1],Vs[i],dt,dx) for i in range(len(Rs)-1)]
-        dEnergy = [abs(Energy[i] - Energy[0]) for i in range(len(Rs)-1)]
+        Energy = [energy(Rs[i],Is[i],Ns[i],Vs[i],dt,dx) for i in range(len(Rs))]
+        dEnergy = [abs(Energy[i] - Energy[0]) for i in range(len(Rs))]
         #print(Energy)
         print("初期値に対するエネルギーの最大誤差:",max(dEnergy))
         if WantToPlot:
-            Time = [i for i in range(len(Rs)-1)]
-            Energy = [Energy[0]] + Energy
+            Time = [i for i in range(len(Rs))]
             plt.plot(Time,dNorm,label="Norm")
             plt.plot(Time,dEnergy,label="Energy")
             plt.xlabel("time")
@@ -293,6 +292,33 @@ def DVDM1(K,M,eps):
             plt.legend()
             plt.show()
     return Rs,Is,Ns,Vs
+
+def checking1(K,M,eps):
+    dx = L/K; dt = T/M
+    #print(dt,dx)
+    Rs,Is,Ns = DVDM1(K,M,eps)[:3]
+    dists = []
+
+    vv = (1 - v*v)**0.5
+    vv2 = 1 - v*v
+    WW = Emax/(2**0.5*vv)
+    qq = q**2
+
+    RANGE = [i for i in range(M+1)]
+    #RANGE = [M] # 最終時刻での誤差だけ知りたいとき
+    for i in RANGE:
+        W = [WW*(k*dx - v*i*dt) for k in range(K)]
+
+        dn = [scipy.special.ellipj(W[k],qq)[2] for k in range(K)]
+
+        F = [Emax*dn[k] for k in range(K)]
+
+        tR = [F[k]*math.cos(phi*(k*dx-u*i*dt)) for k in range(K)]
+        tI = [F[k]*math.sin(phi*(k*dx-u*i*dt)) for k in range(K)]
+        tN = [-F[k]**2/vv2 + N_0 for k in range(K)]
+        dists.append([dist(Rs[i],tR,dx),dist(Is[i],tI,dx),dist(Ns[i],tN,dx)])
+    print("終点での各要素の誤差:",dists[-1])
+    return (dx**2 + dt**2)**0.5,dists
 
 # R,I,Nについてのみ解く
 def DVDM2(K,M,eps):
@@ -380,6 +406,34 @@ def DVDM2(K,M,eps):
         print("時刻:",m,"終点:",M)
     return Rs,Is,Ns,Vs
 
+def checking2(K,M,eps):
+    dx = L/K; dt = T/M
+    #print(dt,dx)
+    Rs,Is,Ns = DVDM2(K,M,eps)[:3]
+    dists = []
+
+    vv = (1 - v*v)**0.5
+    vv2 = 1 - v*v
+    WW = Emax/(2**0.5*vv)
+    qq = q**2
+
+    RANGE = [i for i in range(M+1)]
+    #RANGE = [M] # 最終時刻での誤差だけ知りたいとき
+    for i in RANGE:
+        W = [WW*(k*dx - v*i*dt) for k in range(K)]
+
+        dn = [scipy.special.ellipj(W[k],qq)[2] for k in range(K)]
+
+        F = [Emax*dn[k] for k in range(K)]
+
+        tR = [F[k]*math.cos(phi*(k*dx-u*i*dt)) for k in range(K)]
+        tI = [F[k]*math.sin(phi*(k*dx-u*i*dt)) for k in range(K)]
+        tN = [-F[k]**2/vv2 + N_0 for k in range(K)]
+        dists.append([dist(Rs[i],tR,dx),dist(Is[i],tI,dx),dist(Ns[i],tN,dx)])
+    print("終点での各要素の誤差:",dists[-1])
+    return (dx**2 + dt**2)**0.5,dists
+
+# Newton法の初期値をGlasseyで求める
 def DVDM_Glassey(K,M,eps):
     dx = L/K; dt = T/M
     print(dt,dx)
@@ -477,15 +531,14 @@ def DVDM_Glassey(K,M,eps):
     WantToPlot = False #ノルム・エネルギーを描画したいとき
     if WantToKnow:
         Norm = [norm(Rs[i],dx) + norm(Is[i],dx) for i in range(len(Rs))]
-        dNorm = [abs(Norm[i] - Norm[0]) for i in range(1,len(Rs))]
+        dNorm = [abs(Norm[i] - Norm[0]) for i in range(len(Rs))]
         print("初期値に対するノルムの最大誤差:",max(dNorm))
-        Energy = [energy(Rs[i+1],Is[i+1],Ns[i],Ns[i+1],Vs[i],dt,dx) for i in range(len(Rs)-1)]
-        dEnergy = [abs(Energy[i] - Energy[0]) for i in range(len(Rs)-1)]
+        Energy = [energy(Rs[i],Is[i],Ns[i],Vs[i],dt,dx) for i in range(len(Rs))]
+        dEnergy = [abs(Energy[i] - Energy[0]) for i in range(len(Rs))]
         #print(Energy)
         print("初期値に対するエネルギーの最大誤差:",max(dEnergy))
         if WantToPlot:
-            Time = [i for i in range(len(Rs)-1)]
-            Energy = [Energy[0]] + Energy
+            Time = [i for i in range(len(Rs))]
             plt.plot(Time,dNorm,label="Norm")
             plt.plot(Time,dEnergy,label="Energy")
             plt.xlabel("time")
@@ -493,60 +546,6 @@ def DVDM_Glassey(K,M,eps):
             plt.legend()
             plt.show()
     return Rs,Is,Ns,Vs
-
-def checking1(K,M,eps):
-    dx = L/K; dt = T/M
-    #print(dt,dx)
-    Rs,Is,Ns = DVDM1(K,M,eps)[:3]
-    dists = []
-
-    vv = (1 - v*v)**0.5
-    vv2 = 1 - v*v
-    WW = Emax/(2**0.5*vv)
-    qq = q**2
-
-    RANGE = [i for i in range(M+1)]
-    #RANGE = [M] # 最終時刻での誤差だけ知りたいとき
-    for i in RANGE:
-        W = [WW*(k*dx - v*i*dt) for k in range(K)]
-
-        dn = [scipy.special.ellipj(W[k],qq)[2] for k in range(K)]
-
-        F = [Emax*dn[k] for k in range(K)]
-
-        tR = [F[k]*math.cos(phi*(k*dx-u*i*dt)) for k in range(K)]
-        tI = [F[k]*math.sin(phi*(k*dx-u*i*dt)) for k in range(K)]
-        tN = [-F[k]**2/vv2 + N_0 for k in range(K)]
-        dists.append([dist(Rs[i],tR,dx),dist(Is[i],tI,dx),dist(Ns[i],tN,dx)])
-    print("終点での各要素の誤差:",dists[-1])
-    return (dx**2 + dt**2)**0.5,dists
-
-def checking2(K,M,eps):
-    dx = L/K; dt = T/M
-    #print(dt,dx)
-    Rs,Is,Ns = DVDM2(K,M,eps)[:3]
-    dists = []
-
-    vv = (1 - v*v)**0.5
-    vv2 = 1 - v*v
-    WW = Emax/(2**0.5*vv)
-    qq = q**2
-
-    RANGE = [i for i in range(M+1)]
-    #RANGE = [M] # 最終時刻での誤差だけ知りたいとき
-    for i in RANGE:
-        W = [WW*(k*dx - v*i*dt) for k in range(K)]
-
-        dn = [scipy.special.ellipj(W[k],qq)[2] for k in range(K)]
-
-        F = [Emax*dn[k] for k in range(K)]
-
-        tR = [F[k]*math.cos(phi*(k*dx-u*i*dt)) for k in range(K)]
-        tI = [F[k]*math.sin(phi*(k*dx-u*i*dt)) for k in range(K)]
-        tN = [-F[k]**2/vv2 + N_0 for k in range(K)]
-        dists.append([dist(Rs[i],tR,dx),dist(Is[i],tI,dx),dist(Ns[i],tN,dx)])
-    print("終点での各要素の誤差:",dists[-1])
-    return (dx**2 + dt**2)**0.5,dists
 
 def checking3(K,M,eps):
     dx = L/K; dt = T/M
@@ -575,7 +574,7 @@ def checking3(K,M,eps):
     print("終点での各要素の誤差:",dists[-1])
     return (dx**2 + dt**2)**0.5,dists
 
-N = 20
+N = 2
 K = math.floor(L*N)
 M = math.floor(T*N**2)
 
