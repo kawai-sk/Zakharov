@@ -106,7 +106,7 @@ def parameters(L,m,Emax,eps):
 ###############################################################################
 #初期条件
 
-L = 160; Emax = 1; m = 1; eps = 10**(-9)
+L = 20; Emax = 10; m = 1; eps = 10**(-9)
 v, Emin, q, N_0, u = parameters(L,1,Emax,eps)
 T = L/v; phi = v/2
 
@@ -440,9 +440,8 @@ def DVDM_Glassey(K,M,eps):
 
     # 数値解の記録
     Rs = []; Is = []; Ns = []; Vs = []
-    R0,I0,N0,V0,N1 = initial_condition_DVDM(K,M)
-    Rs.append(R0); Is.append(I0); Ns.append(N0); Ns.append(N1); Vs.append(V0)
-    R_now = R0; I_now = I0; N_before = N0; N_now = N0; V_now = V0;
+    R_now,I_now,N_now,V_now,N_next = initial_condition_DVDM(K,M)
+    Rs.append(R_now); Is.append(I_now); Ns.append(N_now); Vs.append(V_now)
 
     m = 0
 
@@ -462,9 +461,7 @@ def DVDM_Glassey(K,M,eps):
         else -N_now[i%K] - 0.5*dt*DV_now[i%K] if i//K == 2
         else - V_now[i%K] - 0.5*dt*(N_now[i%K] + R_now[i%K]**2 + I_now[i%K]**2) for i in range(4*K)])
 
-        if m == 0:
-            N_next = N1
-        else:
+        if m > 0:
             E = np.array([R_now[k]**2 + I_now[k]**2 for k in range(K)])
             NN = np.array(N_now) + E
             N_next = 2*np.dot(ID,NN) - np.array(N_before) - 2*E
@@ -574,7 +571,7 @@ def checking3(K,M,eps):
     print("終点での各要素の誤差:",dists[-1])
     return (dx**2 + dt**2)**0.5,dists
 
-N = 2
+N = 10
 K = math.floor(L*N)
 M = math.floor(T*N**2)
 

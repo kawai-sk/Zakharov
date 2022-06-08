@@ -103,7 +103,7 @@ def parameters(L,m,Emax,eps):
 ###############################################################################
 #初期条件
 
-L = 160; Emax = 1; m = 1; eps = 10**(-9)
+L = 20; Emax = 1; m = 1; eps = 10**(-9)
 v, Emin, q, N_0, u = parameters(L,1,Emax,eps)
 T = L/v; phi = v/2
 
@@ -273,9 +273,9 @@ def checking(K,M):
     print("終点での各要素の誤差:",dists[-1])
     return (dx**2 + dt**2)**0.5,dists
 
-N = 2
+N = 20
 K = math.floor(L*N)
-M = math.floor(T*N**2)
+M = math.floor(T*N)
 
 #print(Glassey(K,M))
 #print(checking(K,M))

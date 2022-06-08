@@ -206,9 +206,9 @@ def initial_condition2(K,M):
     R0,I0,N0,N1 = initial_condition_common(K,M)[:4]
     dx = L/K; dt = T/M
     Ik = np.identity(K)
-    Dx = (0.5*dt/dx**2)*(-2*Ik + np.eye(K,k=1) + np.eye(K,k=-1))
+    Dx = (1/dx**2)*(-2*Ik + np.eye(K,k=1) + np.eye(K,k=K-1) + np.eye(K,k=-1) + np.eye(K,k=-K+1))
     Dn = np.diag([(N0[k]+N1[k])*dt/4 for k in range(K)])
-    D = Dx - Dn
+    D = 0.5*dt*Dx - Dn
     S = Ik + np.dot(D,D)
     print("S")
     Si = np.linalg.inv(S)
