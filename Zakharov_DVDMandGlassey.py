@@ -3,6 +3,7 @@ import scipy.special
 import matplotlib.pyplot as plt
 import numpy as np
 import random
+import time
 
 ###############################################################################
 #パラメータを定めるための関数
@@ -78,7 +79,7 @@ def parameters(L,m,Emax,eps):
 # Emax < 0.17281841278823945 を目安に Emin > Emax の事故が起こる
 # Emax > 2.173403970708827 を目安に scipy.special.ellipk が機能しなくなる
 # Emax > 4/3 を目安に scipy.special.ellipj が厳密ではなくなる
-L = 20; Emax = 0.2; m = 1; eps = 10**(-1)
+L = 20; Emax = 1; m = 1; eps = 10**(-9)
 v, Emin, q, N_0, u = parameters(L,1,Emax,eps)
 T = L/v; phi = v/2
 
@@ -139,7 +140,7 @@ def initial_condition_DVDM(K,M):
     return R0,I0,N0,V0,N1
 
 ###############################################################################
-# 初期条件の描画
+# 初期解の描画
 
 def ploting_initial_solutions(L,Emax,KK):
     m = 1; eps = 10**(-9)
@@ -205,10 +206,119 @@ def energy_DVDM(R,I,N,V,dt,dx):
         Energy += N[i]*(R[i]**2 + I[i]**2)*dx
     return Energy
 
+def energy_Glassey(R,I,N1,N2,DDI,dt,dx):
+    K = len(R)
+    dN = [(N2[k] - N1[k])/dt for k in range(1,K)]
+    V = dx**2 * np.dot(DDI,dN)
+    V = [0]+[V[i] for i in range(K-1)]
+    dR = FD(R,dx); dI = FD(I,dx);dV = FD(V,dx)
+    Energy = norm(dR,dx) + norm(dI,dx) + 0.25*norm(N1,dx) + 0.25*norm(N2,dx) + 0.5*norm(dV,dx)
+    for i in range(K):
+        Energy += 0.5*(N1[i]+N2[i])*(R[i]**2 + I[i]**2)*dx
+    return Energy
+
+# Glassey スキーム
+def Glassey(K,M):
+    start = time.perf_counter()
+    dx = L/K; dt = T/M
+    print(dt,dx)
+
+    # 数値解の記録
+    Rs = []; Is = []; Ns = []
+    R_now,I_now,N_now,N_next = initial_condition_common(K,M)[:4]
+    Rs.append(R_now); Is.append(I_now); Ns.append(N_now); Ns.append(N_next)
+
+    # ここまでに数値解を計算した時刻
+    ri_t = 0
+    n_t = 1
+
+    # 各mで共通して使える行列
+    Ik = np.identity(K)
+    Dx = (1/dx**2)*(-2*Ik + np.eye(K,k=1) + np.eye(K,k=K-1) + np.eye(K,k=-1) + np.eye(K,k=-K+1))
+    ID = np.linalg.inv(Ik-0.5*dt**2*Dx)
+
+    while ri_t < M or n_t < M:
+        #print(ri_t,n_t,M)
+        if ri_t < n_t: # Nm,N(m+1),Em から E(m+1)を求める
+            Dn = np.diag([N_now[k]+N_next[k] for k in range(K)])
+            D = dt*(0.5*Dx - 0.25*Dn)
+            A = np.block([[Ik,D],[-D,Ik]])
+            b = np.linalg.solve(A,2*np.array([R_now[i] if i < K else I_now[i-K] for i in range(2*K)]))
+            R_next = -np.array(R_now) + b[:K]; I_next = -np.array(I_now) + b[K:]
+            Rs.append(R_next); Is.append(I_next)
+            R_now = R_next; I_now = I_next
+            ri_t += 1
+            if ri_t%10 == 0:
+                print(ri_t,n_t,M) #実行の進捗の目安として
+        else: # N(m-1),Nm,Em から N(m+1)を求める
+            E = np.array([R_now[k]**2 + I_now[k]**2 for k in range(K)])
+            NN = np.array(N_next) + E
+            N_now, N_next = N_next, 2*np.dot(ID,NN) - np.array(N_now) - 2*E
+            Ns.append(N_next)
+            n_t += 1
+    end = time.perf_counter()
+    print("Glassey実行時間:",end-start)
+
+    WantToKnow = True #ノルム・エネルギーを知りたいとき
+    WantToPlot = False #ノルム・エネルギーを描画したいとき
+    if WantToKnow:
+        Norm = [norm(Rs[i],dx) + norm(Is[i],dx) for i in range(len(Rs))]
+        dNorm = [abs(Norm[i] - Norm[0]) for i in range(1,len(Rs))]
+        rNorm = [dNorm[i]/Norm[0] for i in range(len(Rs)-1)]
+
+        DD = -2*np.eye(K-1,k=0) + np.eye(K-1,k=1) + np.eye(K-1,k=-1)
+        DDI = np.linalg.inv(DD)
+        Energy = [energy_Glassey(Rs[i+1],Is[i+1],Ns[i],Ns[i+1],DDI,dt,dx) for i in range(len(Rs)-1)]
+        dEnergy = [abs(Energy[i] - Energy[0]) for i in range(len(Rs)-1)]
+        rEnergy = [dEnergy[i]/abs(Energy[0]) for i in range(len(Rs)-1)]
+
+        print("初期値に対するノルムの最大誤差:",max(dNorm))
+        print("初期値に対するノルムの最大誤差比:",max(rNorm))
+
+        print("初期値に対するエネルギーの最大誤差:",max(dEnergy))
+        print("初期値に対するノルムの最大誤差比:",max(rEnergy))
+        if WantToPlot:
+            Time = [i for i in range(1,len(Rs))]
+            plt.plot(Time,dNorm,label="Norm")
+            plt.plot(Time,dEnergy,label="Energy")
+            plt.xlabel("time")
+            plt.ylabel("errors of Norm and Energy")
+            plt.legend()
+            plt.show()
+    return Rs,Is,Ns
+
+def checking_Glassey(K,M):
+    dx = L/K; dt = T/M #print(dt,dx)
+    Rs,Is,Ns = Glassey(K,M)[:3]
+    eRs = []; eIs = [];eNs = []
+    rRs = []; rIs = [];rNs = []
+
+    vv = (1 - v*v)**0.5; vv2 = 1 - v*v; WW = Emax/(2**0.5*vv); qq = q**2
+
+    RANGE = [i for i in range(len(Rs))]
+    #RANGE = [len(Rs)-1] # 最終時刻での誤差だけ知りたいとき
+    for i in RANGE:
+        W = [WW*(k*dx - v*i*dt) for k in range(K)]
+        dn = [scipy.special.ellipj(W[k],qq)[2] for k in range(K)]
+        F = [Emax*dn[k] for k in range(K)]
+
+        tR = [F[k]*math.cos(phi*(k*dx-u*i*dt)) for k in range(K)]
+        tI = [F[k]*math.sin(phi*(k*dx-u*i*dt)) for k in range(K)]
+        tN = [-F[k]**2/vv2 + N_0 for k in range(K)]
+
+        tnorm = (norm(tR,dx) + norm(tI,dx))**0.5
+
+        eRs.append(dist(Rs[i],tR,dx)); eIs.append(dist(Is[i],tI,dx)); eNs.append(dist(Ns[i],tN,dx))
+        rRs.append(eRs[i]/tnorm); rIs.append(eIs[i]/tnorm); rNs.append(eNs[i]/norm(tN,dx)**2)
+    print("各要素の最大誤差:",max(eRs),max(eIs),max(eNs))
+    print("各要素の最大誤差比:",max(rRs),max(rIs),max(rNs))
+    return (dx**2 + dt**2)**0.5,eRs,eIs,eNs
+
 # DVDMスキーム本体
 # Newton法の初期値をGlasseyで求める
 def DVDM_Glassey(K,M,eps):
-    dx = L/K; dt = T/M; print(dt,dx)
+    start = time.perf_counter()
+    dx = L/K; dt = T/M; #print(dt,dx)
 
     # 数値解の記録
     Rs = []; Is = []; Ns = []; Vs = []
@@ -248,7 +358,7 @@ def DVDM_Glassey(K,M,eps):
             else I_next[i%K] - 0.5*dt*DR_next[i%K] + 0.25*dt*(R_next[i%K] + R_now[i%K])*(N_next[i%K] + N_now[i%K]) if i//K == 1
             else N_next[i%K] - 0.5*dt*DV_next[i%K] if i//K == 2
             else V_next[i%K] - 0.5*dt*(N_next[i%K] + R_next[i%K]**2 + I_next[i%K]**2) for i in range(4*K)])
-        print(m,"Start:",norm(F,dx)**0.5)
+        #print(m,"Start:",norm(F,dx)**0.5)
 
         while norm(F,dx)**0.5 >= eps:
             dNN = dN - 0.25*dt*np.diag(N_next)
@@ -266,28 +376,34 @@ def DVDM_Glassey(K,M,eps):
                 else V_next[i%K] - 0.5*dt*(N_next[i%K] + R_next[i%K]**2 + I_next[i%K]**2) for i in range(4*K)])
 
             t += 1
-            if t%100 == 0:
-                print("時刻:",m,"反復",t,norm(F,dx)**0.5)
+            if t > 1000:
+                return "Failure"
 
         Rs.append(R_next); Is.append(I_next); Ns.append(N_next); Vs.append(V_next)
         R_now = R_next; I_now = I_next; N_before = N_now; N_now = N_next; V_now = V_next
         DR_now = DR_next; DI_now = DI_next; DV_now = DV_next;
         m += 1
-        print("時刻:",m,"終点:",M)
+        if m%10 == 0:
+            print("時刻:",m,"終点:",M)
+    end = time.perf_counter()
+    print("DVDM実行時間:",end-start)
 
     WantToKnow = True #ノルム・エネルギーを知りたいとき
     WantToPlot = False #ノルム・エネルギーを描画したいとき
     if WantToKnow:
         Norm = [norm(Rs[i],dx) + norm(Is[i],dx) for i in range(len(Rs))]
         dNorm = [abs(Norm[i] - Norm[0]) for i in range(len(Rs))]
-        print("初期値に対するノルムの最大誤差:",max(dNorm))
         rNorm = [dNorm[i]/Norm[0] for i in range(len(Rs))]
-        print("初期値に対するノルムの最大誤差比:",max(rNorm))
+
         Energy = [energy_DVDM(Rs[i],Is[i],Ns[i],Vs[i],dt,dx) for i in range(len(Rs))]
         dEnergy = [abs(Energy[i] - Energy[0]) for i in range(len(Rs))]
-        print("初期値に対するエネルギーの最大誤差:",max(dEnergy))
-        rNorm = [dEnergy[i]/abs(Energy[0]) for i in range(len(Rs))]
+        rEnergy = [dEnergy[i]/abs(Energy[0]) for i in range(len(Rs))]
+
+        print("初期値に対するノルムの最大誤差:",max(dNorm))
         print("初期値に対するノルムの最大誤差比:",max(rNorm))
+
+        print("初期値に対するエネルギーの最大誤差:",max(dEnergy))
+        print("初期値に対するノルムの最大誤差比:",max(rEnergy))
 
         if WantToPlot:
             Time = [i for i in range(len(Rs))]
@@ -319,7 +435,6 @@ def checking_DVDM(K,M,eps):
         tN = [-F[k]**2/vv2 + N_0 for k in range(K)]
 
         tnorm = (norm(tR,dx) + norm(tI,dx))**0.5
-        print(tnorm)
 
         eRs.append(dist(Rs[i],tR,dx)); eIs.append(dist(Is[i],tI,dx)); eNs.append(dist(Ns[i],tN,dx))
         rRs.append(eRs[i]/tnorm); rIs.append(eIs[i]/tnorm); rNs.append(eNs[i]/norm(tN,dx)**2)
@@ -331,5 +446,6 @@ N = 1
 K = math.floor(L*N)
 M = math.floor(T*N**2)
 
-#DVDM_Glassey(K,M,10**(-5))
+checking_Glassey(K,M)
+checking_DVDM(K,M,10**(-5))
 #print(checking_DVDM(K,M,10**(-8)))
