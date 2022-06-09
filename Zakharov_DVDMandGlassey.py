@@ -75,7 +75,10 @@ def parameters(L,m,Emax,eps):
 ###############################################################################
 #初期条件
 
-L = 20; Emax = 1; m = 1; eps = 10**(-9)
+# Emax < 0.17281841278823945 を目安に Emin > Emax の事故が起こる
+# Emax > 2.173403970708827 を目安に scipy.special.ellipk が機能しなくなる
+# Emax > 4/3 を目安に scipy.special.ellipj が厳密ではなくなる
+L = 20; Emax = 0.2; m = 1; eps = 10**(-1)
 v, Emin, q, N_0, u = parameters(L,1,Emax,eps)
 T = L/v; phi = v/2
 
@@ -134,6 +137,52 @@ def initial_condition_DVDM(K,M):
     V0 = [0]+[V0[i] for i in range(K-1)]
 
     return R0,I0,N0,V0,N1
+
+###############################################################################
+# 初期条件の描画
+
+def ploting_initial_solutions(L,Emax,KK):
+    m = 1; eps = 10**(-9)
+    v, Emin, q, N_0, u = parameters(L,m,Emax,eps)
+    phi = v/2; dx = L/KK; K = KK+1
+
+    vv = (1 - v*v)**0.5; WW = Emax*dx/(2**0.5*vv)
+    W = [WW*k for k in range(K)]
+
+    qq = q**2;
+    print(qq)
+
+    ellipjs = [scipy.special.ellipj(W[k],qq) for k in range(len(W))]
+    sn = [ellipjs[k][0] for k in range(len(W))]
+    cn = [ellipjs[k][1] for k in range(len(W))]
+    dn = [ellipjs[k][2] for k in range(len(W))]
+
+    F = [Emax*dn[k] for k in range(len(W))]
+
+    R0 = [F[k]*math.cos(phi*k*dx) for k in range(len(W))]
+    I0 = [F[k]*math.sin(phi*k*dx) for k in range(len(W))]
+    E0 = [(R0[k]**2 + I0[k]**2)**0.5 for k in range(len(W))]
+
+    vv2 = 1 - v*v
+    N0 = [-F[k]**2/vv2 + N_0 for k in range(len(W))]
+
+    fig = plt.figure()
+    ax1 = fig.add_subplot(2, 2, 1)
+    ax2 = fig.add_subplot(2, 2, 2)
+    ax3 = fig.add_subplot(2, 2, 3)
+    ax4 = fig.add_subplot(2, 2, 4)
+
+    x = np.linspace(0, L, K)
+    l1,l2,l3,l4 = "Real Part of E","Imaginary Part of E","|E|","N"
+
+    ax1.plot(x, R0, label=l1)
+    ax2.plot(x, I0, label=l2)
+    ax3.plot(x, E0, label=l3)
+    ax4.plot(x, N0, label=l4)
+    ax1.legend(); ax2.legend(); ax3.legend(); ax4.legend()
+    plt.show()
+
+#ploting_initial_solutions(20,1.3,10000)
 
 ###############################################################################
 #スキーム本体
@@ -283,4 +332,4 @@ K = math.floor(L*N)
 M = math.floor(T*N**2)
 
 #DVDM_Glassey(K,M,10**(-5))
-print(checking_DVDM(K,M,10**(-8)))
+#print(checking_DVDM(K,M,10**(-8)))
