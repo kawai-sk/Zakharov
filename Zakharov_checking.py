@@ -10,23 +10,29 @@ from mpmath import *
 ###############################################################################
 #パラメータを定めるための関数
 
+def check(L,m,Emax,Emin):
+    v = 4*math.pi*m/L
+    q = (Emax**2 - Emin**2)**0.5/Emax #通常の場合
+    q2 = (Emin)**2/(Emax**2*2)        #Emin<<Emaxの場合
+    coef = 2*((2*(1-v**2))**0.5)
+    return L,coef*ellipk(q)/Emax,coef*scipy.special.ellipkm1(q2)/Emax
 #Eminの探索：Kが普通に計算できる場合
 def findingE1(L,m,Emax,eps):
     #計算に使う定数
     v = 4*math.pi*m/L; K = L*Emax*0.5/(2*(1-v**2))**0.5
 
     #[0,Emax]内の二分探索
-    h = Emax; l = 0; Emin = (h+l)/2
-    q = (Emax**2 - Emin**2)**0.5/Emax; Kq = scipy.special.ellipk(q)
+    h = 1; l = 0; med = (h+l)/2; Emin = Emax*med
+    q = (Emax**2 - Emin**2)**0.5/Emax; Kq = ellipk(q)
     while abs(Kq - K) >= eps:
         if Kq < K:
-            if h == Emin: break  #性能限界
-            h = Emin
+            if h == med: break  #性能限界
+            h = med
         else:
-            if l == Emin: break #性能限界
-            l = Emin
-        Emin = (h+l)/2
-        q = (Emax**2 - Emin**2)**0.5/Emax; Kq = scipy.special.ellipk(q)
+            if l == med: break #性能限界
+            l = med
+        med = (h+l)/2; Emin = Emax*med
+        q = (Emax**2 - Emin**2)**0.5/Emax; Kq = ellipk(q)
     if abs(Kq - K) < eps: #停止条件を達成した場合
         return Emin
     else:
@@ -53,7 +59,7 @@ def findingE2(L,m,Emax,eps):
         else:
             j += 1
 
-    if abs(Kq2 - K) < eps:
+    if abs(Kq2 - K) < eps and Emin < Emax:
         return Emin
     else:
         return "Failure"
@@ -74,7 +80,7 @@ def parameters(L,m,Emax,eps):
 # Emax < 0.17281841278823945 を目安に Emin > Emax の事故が起こる
 # Emax > 2.173403970708827 を目安に scipy.special.ellipk が機能しなくなる
 # Emax > 4/3 を目安に scipy.special.ellipj が厳密ではなくなる
-L = 20; Emax = 1; m = 1; eps = 10**(-9)
+L = 20; Emax = 2.1; m = 1; eps = 10**(-8)
 v, Emin, q, N_0, u = parameters(L,1,Emax,eps)
 T = L/v; phi = v/2
 Param = [L,Emax,v,Emin,q,N_0,u,T,phi]
@@ -87,7 +93,7 @@ def analytical_solutions(Param,t,K):
     vv = (1 - v*v)**0.5; vv2 = 1 - v*v; WW = Emax/(2**0.5*vv)
     #print(Emin,q,N_0,WW)
     W = [WW*(k*dx-v*t) for k in range(K)]
-    dn = [scipy.special.ellipj(W[k],q)[2] for k in range(len(W))]
+    dn = [ellipfun('dn',W[k],q) for k in range(len(W))]
     F = [Emax*dn[k] for k in range(len(W))]
 
     R = [F[k]*math.cos(phi*(k*dx-u*t)) for k in range(len(W))]
@@ -321,6 +327,7 @@ def checking_norms3(Emax):
         sn = [scipy.special.ellipj(W[k],q)[0] for k in range(len(W))]
         print(max([abs(dn[k]-(1-q*sn[k]**2)**0.5)for k in range(len(W))]))
 
+ploting_initial_solutions(Param,100)
 #checking_norms(5)
 #checking_norms2(1.3,20)
-checking_norms2(1,10)
+#checking_norms2(1,10)

@@ -18,7 +18,7 @@ def findingE1(L,m,Emax,eps):
     #[0,Emax]内の二分探索
     h = Emax; l = 0; Emin = (h+l)/2
     q = (Emax**2 - Emin**2)**0.5/Emax
-    Kq = scipy.special.ellipk(q)
+    Kq = ellipk(q)
     while abs(Kq - K) >= eps:
         if Kq < K:
             if h == Emin: #性能限界
@@ -29,7 +29,7 @@ def findingE1(L,m,Emax,eps):
                 break
             l = Emin
         Emin = (h+l)/2
-        q = (Emax**2 - Emin**2)**0.5/Emax; Kq = scipy.special.ellipk(q)
+        q = (Emax**2 - Emin**2)**0.5/Emax; Kq = ellipk(q)
     if abs(Kq - K) < eps: #停止条件を達成した場合
         return Emin
     else:
@@ -71,14 +71,14 @@ def parameters(L,m,Emax,eps):
     if Emin == "Failure":
         Emin = 0
     q = (Emax**2 - Emin**2)**0.5/Emax
-    N_0 = 2*(2/(1-v**2))**0.5*scipy.special.ellipe(q**2)/L
+    N_0 = 2*(2/(1-v**2))**0.5*float(ellipe(q**2))/L
     u = v/2 + 2*N_0/v - (Emax**2 + Emin**2)/(v*(1-v**2))
     return v,Emin,q,N_0,u
 
 # Emax < 0.17281841278823945 を目安に Emin > Emax の事故が起こる
 # Emax > 2.173403970708827 を目安に scipy.special.ellipk が機能しなくなる
 # Emax > 4/3 を目安に scipy.special.ellipj が厳密ではなくなる
-L = 20; Emax = 1.3; m = 1; eps = 10**(-9)
+L = 20; Emax = 2.1; m = 1; eps = 10**(-9)
 v, Emin, q, N_0, u = parameters(L,1,Emax,eps)
 T = L/v; phi = v/2
 Param = [L,Emax,v,Emin,q,N_0,u,T,phi]
@@ -90,7 +90,7 @@ def analytical_solutions(Param,t,K):
     dx = L/K
     vv = (1 - v*v)**0.5; vv2 = 1 - v*v; WW = Emax/(2**0.5*vv)
     W = [WW*(k*dx-v*t) for k in range(K)]
-    dn = [scipy.special.ellipj(W[k],q)[2] for k in range(len(W))]
+    dn = [float(ellipfun('dn',W[k],q)) for k in range(len(W))]
     F = [Emax*dn[k] for k in range(len(W))]
 
     R = [F[k]*math.cos(phi*(k*dx-u*t)) for k in range(len(W))]
@@ -169,8 +169,8 @@ def initial_condition_common(Param,K,M):
 
     vv = (1 - v*v)**0.5; WW = Emax*dx/(2**0.5*vv); coef = -2**0.5*Emax**2*q**2*v/vv*3
 
-    ellipjs = [scipy.special.ellipj(WW*k,q) for k in range(K)]
-    Nt0 = [coef*ellipjs[k][0]*ellipjs[k][1]*ellipjs[k][2] for k in range(K)]
+    W = [WW*k for k in range(K)]
+    Nt0 = [float(coef*ellipfun('sn',W[k],q)*ellipfun('cn',W[k],q)*ellipfun('dn',W[k],q)) for k in range(K)]
 
     d2N0 = SCD(N0,dx)
     dR0 = CD(R0,dx); d2R0 = SCD(R0,dx)
@@ -361,7 +361,7 @@ def DVDM_Glassey(Param,K,M,eps):
     end = time.perf_counter()
     print("DVDM実行時間:",end-start)
 
-    WantToKnow = False #ノルム・エネルギーを知りたいとき
+    WantToKnow = True #ノルム・エネルギーを知りたいとき
     WantToPlot = False #ノルム・エネルギーを描画したいとき
     if WantToKnow:
         Norm = [norm(Rs[i],dx) + norm(Is[i],dx) for i in range(len(Rs))]
@@ -410,7 +410,32 @@ def checking_DVDM(Param,K,M,eps):
         print("t:",32*(i+1)/4,",",eEs[j],eNs[j],",",rEs[j],rNs[j])
     return (dx**2 + dt**2)**0.5,eEs,eNs
 
-N = 1
+def comparing(Param,K,M,eps):
+    dx = L/K; dt = T/M
+    RG,IG,NG = Glassey(Param,K,M)
+    RD,ID,ND = DVDM_Glassey(Param,K,M,eps)[:3]
+    t = M
+    tR,tI,tN = analytical_solutions(Param,(t-1)*dt,K)
+    x = np.linspace(0, L, K)
+
+    fig = plt.figure()
+    ax1 = fig.add_subplot(1, 3, 1); ax2 = fig.add_subplot(1, 3, 2); ax3 = fig.add_subplot(1, 3, 3)
+
+    l1,l2,l3 = "Glassey","DVDM","analytical"
+    ax1.plot(x, RG[t], label=l1)
+    ax1.plot(x, RD[t], label=l2)
+    ax1.plot(x, tR, label=l3)
+    ax2.plot(x, IG[t], label=l1)
+    ax2.plot(x, ID[t], label=l2)
+    ax2.plot(x, tI, label=l3)
+    ax3.plot(x, NG[t], label=l1)
+    ax3.plot(x, ND[t], label=l2)
+    ax3.plot(x, tN, label=l3)
+    ax1.legend(); ax2.legend(); ax3.legend()
+    plt.show()
+
+
+N = 15
 K = math.floor(L*N)
 M = math.floor(T*N)
 
@@ -419,3 +444,4 @@ M = math.floor(T*N)
 #print(checking_Glassey(Param,K,M))
 #print(checking_DVDM(Param,K,M,10**(-5)))
 #print(checking_DVDM(Param,K,M,10**(-8)))
+comparing(Param,K,M,10**(-8))
