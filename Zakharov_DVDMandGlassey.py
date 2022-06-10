@@ -5,6 +5,7 @@ import matplotlib.cm as cm
 import numpy as np
 import random
 import time
+from mpmath import *
 
 ###############################################################################
 #パラメータを定めるための関数
@@ -88,6 +89,7 @@ def analytical_solutions(Param,t,K):
     L,Emax,v,Emin,q,N_0,u,T,phi = Param
     dx = L/K
     vv = (1 - v*v)**0.5; vv2 = 1 - v*v; WW = Emax/(2**0.5*vv); qq = q**2
+    #print(Emin,q,N_0,WW,qq)
     W = [WW*(k*dx-v*t) for k in range(K)]
     dn = [scipy.special.ellipj(W[k],qq)[2] for k in range(len(W))]
     F = [Emax*dn[k] for k in range(len(W))]
@@ -97,6 +99,20 @@ def analytical_solutions(Param,t,K):
     N = [-F[k]**2/vv2 + N_0 for k in range(len(W))]
 
     return R,I,N
+
+def checking_analycal(n,m):
+    Emaxs = [0.18 + (1.3-0.18)*i/m for i in range(m+1)]
+    Errors = []
+    L = 20; m = 1; eps = 10**(-9)
+    for Emax in Emaxs:
+        v, Emin, q, N_0, u = parameters(L,1,Emax,eps)
+        T = L/v; phi = v/2
+        Param = [L,Emax,v,Emin,q,N_0,u,T,phi]
+        K = math.floor(L*n); M = math.floor(T*n)
+        dt = T/M; dx = L/K
+        analytical_solutions(Param,T/2,K)
+
+#checking_analycal(1,10)
 
 ###############################################################################
 #初期条件
@@ -177,77 +193,6 @@ def initial_condition_DVDM(Param,K,M):
     V0 = [0]+[V0[i] for i in range(K-1)]
 
     return R0,I0,N0,V0,N1
-
-###############################################################################
-# 真の解の描画
-
-def ploting_initial_solutions(Param,K):
-    L = Param[0]
-    R0,I0,N0 = analytical_solutions(Param,0,K)
-    E0 = [(R0[k]**2 + I0[k]**2)**0.5 for k in range(len(R0))]
-
-    fig = plt.figure()
-    ax1 = fig.add_subplot(2, 2, 1); ax2 = fig.add_subplot(2, 2, 2)
-    ax3 = fig.add_subplot(2, 2, 3); ax4 = fig.add_subplot(2, 2, 4)
-
-    x = np.linspace(0, L, K)
-    l1,l2,l3,l4 = "Real Part of E","Imaginary Part of E","|E|","N"
-
-    ax1.plot(x, R0, label=l1); ax2.plot(x, I0, label=l2); ax3.plot(x, E0, label=l3); ax4.plot(x, N0, label=l4)
-    ax1.legend(); ax2.legend(); ax3.legend(); ax4.legend()
-    plt.show()
-
-def ploting_solutions(Param,n):
-    L,Emax,v,Emin,q,N_0,u,T,phi = Param
-    K = math.floor(L*n); M = math.floor(T*n)
-    dt = T/M; dx = L/K
-
-    fig = plt.figure()
-    ax1 = fig.add_subplot(2, 2, 1); ax2 = fig.add_subplot(2, 2, 2)
-    ax3 = fig.add_subplot(2, 2, 3); ax4 = fig.add_subplot(2, 2, 4)
-
-    x = np.linspace(0, L, K)
-
-    for j in range(4):
-        i = (j+1)*M//4
-        R,I,N = analytical_solutions(Param,i*dt,K)
-        E = [(R[k]**2 + I[k]**2)**0.5 for k in range(len(R))]
-
-        l1,l2,l3,l4 = "Real Part of E","Imaginary Part of E","|E|","N"
-
-        ax1.plot(x, R, color=cm.hsv(i/M))#, label=l1)
-        ax2.plot(x, I, color=cm.hsv(i/M))#, label=l2)
-        ax3.plot(x, E, color=cm.hsv(i/M))#, label=l3)
-        ax4.plot(x, N, color=cm.hsv(i/M))#, label=l4)
-        #ax1.legend(); ax2.legend(); ax3.legend(); ax4.legend()
-    plt.show()
-
-def checking_invariants(n,m):
-    Emaxs = [0.18 + (1.3-0.18)*i/m for i in range(m+1)]
-    L = 20; m = 1; eps = 10**(-9)
-    for Emax in Emaxs:
-        v, Emin, q, N_0, u = parameters(L,1,Emax,eps)
-        T = L/v; phi = v/2
-        Param = [L,Emax,v,Emin,q,N_0,u,T,phi]
-        K = math.floor(L*n); M = math.floor(T*n)
-        dt = T/M; dx = L/K
-
-        time = []
-        Norm = []
-
-        for i in range(M+1):
-            time.append(i*dt)
-            R,I,N = analytical_solutions(Param,i*dt,K)
-            Norm.append(norm(R,dx) + norm(I,dx))
-
-        dNorm = [Norm[i]-Norm[0] for i in range(len(Norm))]
-        plt.plot(time,dNorm,label="Emax="+str(Emax))
-        plt.legend()
-    plt.xlabel("time")
-    plt.ylabel("Error of Norm")
-    plt.show()
-
-#checking_invariants(10,15)
 
 ###############################################################################
 #スキーム本体
