@@ -78,7 +78,7 @@ def parameters(L,m,Emax,eps):
 # Emax < 0.17281841278823945 を目安に Emin > Emax の事故が起こる
 # Emax > 2.173403970708827 を目安に scipy.special.ellipk が機能しなくなる
 # Emax > 4/3 を目安に scipy.special.ellipj が厳密ではなくなる
-L = 20; Emax = 1; m = 1; eps = 10**(-9)
+L = 20; Emax = 1.3; m = 1; eps = 10**(-9)
 v, Emin, q, N_0, u = parameters(L,1,Emax,eps)
 T = L/v; phi = v/2
 Param = [L,Emax,v,Emin,q,N_0,u,T,phi]
@@ -88,10 +88,9 @@ Param = [L,Emax,v,Emin,q,N_0,u,T,phi]
 def analytical_solutions(Param,t,K):
     L,Emax,v,Emin,q,N_0,u,T,phi = Param
     dx = L/K
-    vv = (1 - v*v)**0.5; vv2 = 1 - v*v; WW = Emax/(2**0.5*vv); qq = q**2
-    #print(Emin,q,N_0,WW,qq)
+    vv = (1 - v*v)**0.5; vv2 = 1 - v*v; WW = Emax/(2**0.5*vv)
     W = [WW*(k*dx-v*t) for k in range(K)]
-    dn = [scipy.special.ellipj(W[k],qq)[2] for k in range(len(W))]
+    dn = [scipy.special.ellipj(W[k],q)[2] for k in range(len(W))]
     F = [Emax*dn[k] for k in range(len(W))]
 
     R = [F[k]*math.cos(phi*(k*dx-u*t)) for k in range(len(W))]
@@ -168,9 +167,9 @@ def initial_condition_common(Param,K,M):
 
     R0,I0,N0 = analytical_solutions(Param,0,K)
 
-    vv = (1 - v*v)**0.5; WW = Emax*dx/(2**0.5*vv); qq = q**2; coef = -2**0.5*Emax**2*qq*v/vv*3
+    vv = (1 - v*v)**0.5; WW = Emax*dx/(2**0.5*vv); coef = -2**0.5*Emax**2*q**2*v/vv*3
 
-    ellipjs = [scipy.special.ellipj(WW*k,qq) for k in range(K)]
+    ellipjs = [scipy.special.ellipj(WW*k,q) for k in range(K)]
     Nt0 = [coef*ellipjs[k][0]*ellipjs[k][1]*ellipjs[k][2] for k in range(K)]
 
     d2N0 = SCD(N0,dx)
@@ -272,8 +271,6 @@ def checking_Glassey(Param,K,M):
     eEs = [];eNs = []
     rEs = [];rNs = []
 
-    vv = (1 - v*v)**0.5; vv2 = 1 - v*v; WW = Emax/(2**0.5*vv); qq = q**2
-
     RANGE = [i for i in range(len(Rs))]
     #RANGE = [len(Rs)-1] # 最終時刻での誤差だけ知りたいとき
     for i in RANGE:
@@ -364,7 +361,7 @@ def DVDM_Glassey(Param,K,M,eps):
     end = time.perf_counter()
     print("DVDM実行時間:",end-start)
 
-    WantToKnow = True #ノルム・エネルギーを知りたいとき
+    WantToKnow = False #ノルム・エネルギーを知りたいとき
     WantToPlot = False #ノルム・エネルギーを描画したいとき
     if WantToKnow:
         Norm = [norm(Rs[i],dx) + norm(Is[i],dx) for i in range(len(Rs))]
@@ -396,8 +393,6 @@ def checking_DVDM(Param,K,M,eps):
     Rs,Is,Ns = DVDM_Glassey(Param,K,M,eps)[:3]
     eEs = []; eNs = []
     rEs = []; rNs = []
-
-    vv = (1 - v*v)**0.5; vv2 = 1 - v*v; WW = Emax/(2**0.5*vv); qq = q**2
 
     RANGE = [i for i in range(len(Rs))]
     #RANGE = [len(Rs)-1] # 最終時刻での誤差だけ知りたいとき

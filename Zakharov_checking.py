@@ -84,10 +84,10 @@ Param = [L,Emax,v,Emin,q,N_0,u,T,phi]
 def analytical_solutions(Param,t,K):
     L,Emax,v,Emin,q,N_0,u,T,phi = Param
     dx = L/K
-    vv = (1 - v*v)**0.5; vv2 = 1 - v*v; WW = Emax/(2**0.5*vv); qq = q**2
-    #print(Emin,q,N_0,WW,qq)
+    vv = (1 - v*v)**0.5; vv2 = 1 - v*v; WW = Emax/(2**0.5*vv)
+    #print(Emin,q,N_0,WW)
     W = [WW*(k*dx-v*t) for k in range(K)]
-    dn = [scipy.special.ellipj(W[k],qq)[2] for k in range(len(W))]
+    dn = [scipy.special.ellipj(W[k],q)[2] for k in range(len(W))]
     F = [Emax*dn[k] for k in range(len(W))]
 
     R = [F[k]*math.cos(phi*(k*dx-u*t)) for k in range(len(W))]
@@ -164,9 +164,9 @@ def initial_condition_common(Param,K,M):
 
     R0,I0,N0 = analytical_solutions(Param,0,K)
 
-    vv = (1 - v*v)**0.5; WW = Emax*dx/(2**0.5*vv); qq = q**2; coef = -2**0.5*Emax**2*qq*v/vv*3
+    vv = (1 - v*v)**0.5; WW = Emax*dx/(2**0.5*vv); coef = -2**0.5*Emax**2*q**2*v/vv*3
 
-    ellipjs = [scipy.special.ellipj(WW*k,qq) for k in range(K)]
+    ellipjs = [scipy.special.ellipj(WW*k,q) for k in range(K)]
     Nt0 = [coef*ellipjs[k][0]*ellipjs[k][1]*ellipjs[k][2] for k in range(K)]
 
     d2N0 = SCD(N0,dx)
@@ -259,7 +259,7 @@ def checking_invariants(n):
     plt.show()
 
 def checking_norms(n):
-    Emaxs = [0.18]
+    Emaxs = [0.18,1,1.3]
     Errors = []
     L = 20; m = 1; eps = 10**(-9)
     for Emax in Emaxs:
@@ -275,9 +275,9 @@ def checking_norms(n):
             print(i)
             time.append(i/M)
             dx = L/K
-            vv = (1 - v*v)**0.5; vv2 = 1 - v*v; WW = Emax/(2**0.5*vv); qq = q**2
+            vv = (1 - v*v)**0.5; vv2 = 1 - v*v; WW = Emax/(2**0.5*vv)
             W = [WW*(k*dx-v*i*dt) for k in range(K)]
-            dn = [Emax**2*scipy.special.ellipj(W[k],qq)[2] for k in range(len(W))]
+            dn = [Emax**2*scipy.special.ellipj(W[k],q)[2] for k in range(len(W))]
             Norm.append(norm(dn,dx))
         plt.plot(time,Norm,label="Emax="+str(Emax))
     plt.xlabel("time")
@@ -288,7 +288,7 @@ def checking_norms2(Emax,n):
     ns = [10*i for i in range(1,10)]
     L = 20; eps = 10**(-9)
     v, Emin, q, N_0, u = parameters(L,1,Emax,eps)
-    vv = (1 - v*v)**0.5; vv2 = 1 - v*v; WW = Emax/(2**0.5*vv); qq = q**2
+    vv = (1 - v*v)**0.5; vv2 = 1 - v*v; WW = Emax/(2**0.5*vv)
     T = L/v; phi = v/2
     L = 20; m = 1; eps = 10**(-9)
     M = math.floor(T*n); dt = T/M
@@ -300,7 +300,7 @@ def checking_norms2(Emax,n):
         for i in range(0,M+1):
             print(i)
             W = [WW*(k*dx-v*i*dt) for k in range(K)]
-            dn = [Emax**2*scipy.special.ellipj(W[k],qq)[2] for k in range(len(W))]
+            dn = [Emax**2*scipy.special.ellipj(W[k],q)[2] for k in range(len(W))]
             Norm.append(norm(dn,dx))
         plt.plot(time,Norm,label="K="+str(K))
     plt.xlabel("time")
@@ -308,20 +308,19 @@ def checking_norms2(Emax,n):
     plt.show()
 
 def checking_norms3(Emax):
-    ns = [100*i for i in range(1,50)]
+    ns = [10*i for i in range(1,50)]
     L = 20; eps = 10**(-9)
     v, Emin, q, N_0, u = parameters(L,1,Emax,eps)
-    vv = (1 - v*v)**0.5; vv2 = 1 - v*v; WW = Emax/(2**0.5*vv); qq = q**2
+    vv = (1 - v*v)**0.5; vv2 = 1 - v*v; WW = Emax/(2**0.5*vv)
     T = L/v; phi = v/2
     L = 20; m = 1; eps = 10**(-9)
-    print(L,v*T/10,1-qq)
     for n in ns:
         K = math.floor(L*n); dx = L/K
         W = [WW*(k*dx) for k in range(K)]
-        dn = [scipy.special.ellipj(W[k],qq)[2] for k in range(len(W))]
-        cn = [scipy.special.ellipj(W[k],qq)[1] for k in range(len(W))]
-        print(max([abs(dn[k]-cn[k])for k in range(len(W))]))
+        dn = [scipy.special.ellipj(W[k],q)[2] for k in range(len(W))]
+        sn = [scipy.special.ellipj(W[k],q)[0] for k in range(len(W))]
+        print(max([abs(dn[k]-(1-q*sn[k]**2)**0.5)for k in range(len(W))]))
 
 #checking_norms(5)
 #checking_norms2(1.3,20)
-checking_norms3(1.3)
+checking_norms2(1,10)
