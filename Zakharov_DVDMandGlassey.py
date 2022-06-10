@@ -1,6 +1,7 @@
 import math
 import scipy.special
 import matplotlib.pyplot as plt
+import matplotlib.cm as cm
 import numpy as np
 import random
 import time
@@ -73,120 +74,43 @@ def parameters(L,m,Emax,eps):
     u = v/2 + 2*N_0/v - (Emax**2 + Emin**2)/(v*(1-v**2))
     return v,Emin,q,N_0,u
 
-###############################################################################
-#初期条件
-
 # Emax < 0.17281841278823945 を目安に Emin > Emax の事故が起こる
 # Emax > 2.173403970708827 を目安に scipy.special.ellipk が機能しなくなる
 # Emax > 4/3 を目安に scipy.special.ellipj が厳密ではなくなる
 L = 20; Emax = 1; m = 1; eps = 10**(-9)
 v, Emin, q, N_0, u = parameters(L,1,Emax,eps)
 T = L/v; phi = v/2
-
-#中心差分
-def CD(v,dx):
-    return [(v[(k+1)%K] - v[(k-1)%K])/(2*dx) for k in range(len(v))]
-def SCD(v,dx):
-    return [(v[(k+1)%K] -2*v[k] + v[(k-1)%K])/dx**2 for k in range(len(v))]
-
-#L2ノルムによる距離
-def dist(a,b,dx):
-    dis = 0
-    for i in range(len(a)):
-        dis += (a[i]-b[i])**2*dx
-    return dis**0.5
-
-#Taylorで R,I,N の m=1 を求める
-def initial_condition_common(K,M):
-    dx = L/K; dt = T/M
-
-    vv = (1 - v*v)**0.5; WW = Emax*dx/(2**0.5*vv)
-    W = [WW*k for k in range(K)]
-
-    qq = q**2; ellipjs = [scipy.special.ellipj(W[k],qq) for k in range(K)]
-    sn = [ellipjs[k][0] for k in range(K)]
-    cn = [ellipjs[k][1] for k in range(K)]
-    dn = [ellipjs[k][2] for k in range(K)]
-
-    F = [Emax*dn[k] for k in range(K)]
-
-    R0 = [F[k]*math.cos(phi*k*dx) for k in range(K)]
-    I0 = [F[k]*math.sin(phi*k*dx) for k in range(K)]
-
-    vv2 = 1 - v*v
-    N0 = [-F[k]**2/vv2 + N_0 for k in range(K)]
-
-    coef = -2**0.5*Emax**2*qq*v/vv*3
-    Nt0 = [coef*sn[k]*cn[k]*dn[k] for k in range(K)]
-
-    d2N0 = SCD(N0,dx)
-    dR0 = CD(R0,dx); d2R0 = SCD(R0,dx)
-    dI0 = CD(I0,dx); d2I0 = SCD(I0,dx)
-    N1 = [N0[k] + dt*Nt0[k] + dt**2*(0.5*d2N0[k] + dR0[k]**2 + dI0[k]**2 + R0[k]*d2R0[k] + I0[k]*d2I0[k]) for k in range(K)]
-
-    return R0,I0,N0,N1,Nt0
-
-def initial_condition_DVDM(K,M):
-    dx = L/K; dt = T/M
-    R0,I0,N0,N1,Nt0 = initial_condition_common(K,M)
-
-    DD = -2*np.eye(K-1,k=0) + np.eye(K-1,k=1) + np.eye(K-1,k=-1)
-    DDI = np.linalg.inv(DD)
-
-    dN = [Nt0[k] for k in range(1,K)]
-    V0 = dx**2 * np.dot(DDI,dN)
-    V0 = [0]+[V0[i] for i in range(K-1)]
-
-    return R0,I0,N0,V0,N1
+Param = [L,Emax,v,Emin,q,N_0,u,T,phi]
 
 ###############################################################################
-# 初期解の描画
 
-def ploting_initial_solutions(L,Emax,KK):
-    m = 1; eps = 10**(-9)
-    v, Emin, q, N_0, u = parameters(L,m,Emax,eps)
-    phi = v/2; dx = L/KK; K = KK+1
-
-    vv = (1 - v*v)**0.5; WW = Emax*dx/(2**0.5*vv)
-    W = [WW*k for k in range(K)]
-
-    qq = q**2;
-    print(qq)
-
-    ellipjs = [scipy.special.ellipj(W[k],qq) for k in range(len(W))]
-    sn = [ellipjs[k][0] for k in range(len(W))]
-    cn = [ellipjs[k][1] for k in range(len(W))]
-    dn = [ellipjs[k][2] for k in range(len(W))]
-
+def analytical_solutions(Param,t,K):
+    L,Emax,v,Emin,q,N_0,u,T,phi = Param
+    dx = L/K
+    vv = (1 - v*v)**0.5; vv2 = 1 - v*v; WW = Emax/(2**0.5*vv); qq = q**2
+    W = [WW*(k*dx-v*t) for k in range(K)]
+    dn = [scipy.special.ellipj(W[k],qq)[2] for k in range(len(W))]
     F = [Emax*dn[k] for k in range(len(W))]
 
-    R0 = [F[k]*math.cos(phi*k*dx) for k in range(len(W))]
-    I0 = [F[k]*math.sin(phi*k*dx) for k in range(len(W))]
-    E0 = [(R0[k]**2 + I0[k]**2)**0.5 for k in range(len(W))]
+    R = [F[k]*math.cos(phi*(k*dx-u*t)) for k in range(len(W))]
+    I = [F[k]*math.sin(phi*(k*dx-u*t)) for k in range(len(W))]
+    N = [-F[k]**2/vv2 + N_0 for k in range(len(W))]
 
-    vv2 = 1 - v*v
-    N0 = [-F[k]**2/vv2 + N_0 for k in range(len(W))]
-
-    fig = plt.figure()
-    ax1 = fig.add_subplot(2, 2, 1)
-    ax2 = fig.add_subplot(2, 2, 2)
-    ax3 = fig.add_subplot(2, 2, 3)
-    ax4 = fig.add_subplot(2, 2, 4)
-
-    x = np.linspace(0, L, K)
-    l1,l2,l3,l4 = "Real Part of E","Imaginary Part of E","|E|","N"
-
-    ax1.plot(x, R0, label=l1)
-    ax2.plot(x, I0, label=l2)
-    ax3.plot(x, E0, label=l3)
-    ax4.plot(x, N0, label=l4)
-    ax1.legend(); ax2.legend(); ax3.legend(); ax4.legend()
-    plt.show()
-
-#ploting_initial_solutions(20,1.3,10000)
+    return R,I,N
 
 ###############################################################################
-#スキーム本体
+#初期条件
+
+#差分
+def FD(v,dx):
+    K = len(v)
+    return [(v[(k+1)%K] - v[k])/dx for k in range(K)]
+def CD(v,dx):
+    K = len(v)
+    return [(v[(k+1)%K] - v[(k-1)%K])/(2*dx) for k in range(K)]
+def SCD(v,dx):
+    K = len(v)
+    return [(v[(k+1)%K] -2*v[k] + v[(k-1)%K])/dx**2 for k in range(K)]
 
 #L2ノルム
 def norm(v,dx):
@@ -196,13 +120,10 @@ def norm(v,dx):
     return Ltwo
 
 #エネルギー
-def FD(v,dx):
-    return [(v[(k+1)%K] - v[k])/dx for k in range(len(v))]
-
-def energy_DVDM(R,I,N,V,dt,dx):
+def energy_DVDM(R,I,N,V,dx):
     dR = FD(R,dx); dI = FD(I,dx); dV = FD(V,dx)
     Energy = norm(dR,dx) + norm(dI,dx) + 0.5*norm(N,dx) + 0.5*norm(dV,dx)
-    for i in range(K):
+    for i in range(len(R)):
         Energy += N[i]*(R[i]**2 + I[i]**2)*dx
     return Energy
 
@@ -217,14 +138,128 @@ def energy_Glassey(R,I,N1,N2,DDI,dt,dx):
         Energy += 0.5*(N1[i]+N2[i])*(R[i]**2 + I[i]**2)*dx
     return Energy
 
+#L2ノルムによる距離
+def dist(a,b,dx):
+    dis = 0
+    for i in range(len(a)):
+        dis += (a[i]-b[i])**2*dx
+    return dis**0.5
+
+#Taylorで R,I,N の m=1 を求める
+def initial_condition_common(Param,K,M):
+    L,Emax,v,Emin,q,N_0,u,T,phi = Param
+    dx = L/K; dt = T/M
+
+    R0,I0,N0 = analytical_solutions(Param,0,K)
+
+    vv = (1 - v*v)**0.5; WW = Emax*dx/(2**0.5*vv); qq = q**2; coef = -2**0.5*Emax**2*qq*v/vv*3
+
+    ellipjs = [scipy.special.ellipj(WW*k,qq) for k in range(K)]
+    Nt0 = [coef*ellipjs[k][0]*ellipjs[k][1]*ellipjs[k][2] for k in range(K)]
+
+    d2N0 = SCD(N0,dx)
+    dR0 = CD(R0,dx); d2R0 = SCD(R0,dx)
+    dI0 = CD(I0,dx); d2I0 = SCD(I0,dx)
+    N1 = [N0[k] + dt*Nt0[k] + dt**2*(0.5*d2N0[k] + dR0[k]**2 + dI0[k]**2 + R0[k]*d2R0[k] + I0[k]*d2I0[k]) for k in range(K)]
+
+    return R0,I0,N0,N1,Nt0
+
+def initial_condition_DVDM(Param,K,M):
+    L,Emax,v,Emin,q,N_0,u,T,phi = Param
+    dx = L/K; dt = T/M
+    R0,I0,N0,N1,Nt0 = initial_condition_common(Param,K,M)
+
+    DD = -2*np.eye(K-1,k=0) + np.eye(K-1,k=1) + np.eye(K-1,k=-1)
+    DDI = np.linalg.inv(DD)
+
+    dN = [Nt0[k] for k in range(1,K)]
+    V0 = dx**2 * np.dot(DDI,dN)
+    V0 = [0]+[V0[i] for i in range(K-1)]
+
+    return R0,I0,N0,V0,N1
+
+###############################################################################
+# 真の解の描画
+
+def ploting_initial_solutions(Param,K):
+    L = Param[0]
+    R0,I0,N0 = analytical_solutions(Param,0,K)
+    E0 = [(R0[k]**2 + I0[k]**2)**0.5 for k in range(len(R0))]
+
+    fig = plt.figure()
+    ax1 = fig.add_subplot(2, 2, 1); ax2 = fig.add_subplot(2, 2, 2)
+    ax3 = fig.add_subplot(2, 2, 3); ax4 = fig.add_subplot(2, 2, 4)
+
+    x = np.linspace(0, L, K)
+    l1,l2,l3,l4 = "Real Part of E","Imaginary Part of E","|E|","N"
+
+    ax1.plot(x, R0, label=l1); ax2.plot(x, I0, label=l2); ax3.plot(x, E0, label=l3); ax4.plot(x, N0, label=l4)
+    ax1.legend(); ax2.legend(); ax3.legend(); ax4.legend()
+    plt.show()
+
+def ploting_solutions(Param,n):
+    L,Emax,v,Emin,q,N_0,u,T,phi = Param
+    K = math.floor(L*n); M = math.floor(T*n)
+    dt = T/M; dx = L/K
+
+    fig = plt.figure()
+    ax1 = fig.add_subplot(2, 2, 1); ax2 = fig.add_subplot(2, 2, 2)
+    ax3 = fig.add_subplot(2, 2, 3); ax4 = fig.add_subplot(2, 2, 4)
+
+    x = np.linspace(0, L, K)
+
+    for j in range(4):
+        i = (j+1)*M//4
+        R,I,N = analytical_solutions(Param,i*dt,K)
+        E = [(R[k]**2 + I[k]**2)**0.5 for k in range(len(R))]
+
+        l1,l2,l3,l4 = "Real Part of E","Imaginary Part of E","|E|","N"
+
+        ax1.plot(x, R, color=cm.hsv(i/M))#, label=l1)
+        ax2.plot(x, I, color=cm.hsv(i/M))#, label=l2)
+        ax3.plot(x, E, color=cm.hsv(i/M))#, label=l3)
+        ax4.plot(x, N, color=cm.hsv(i/M))#, label=l4)
+        #ax1.legend(); ax2.legend(); ax3.legend(); ax4.legend()
+    plt.show()
+
+def checking_invariants(n,m):
+    Emaxs = [0.18 + (1.3-0.18)*i/m for i in range(m+1)]
+    L = 20; m = 1; eps = 10**(-9)
+    for Emax in Emaxs:
+        v, Emin, q, N_0, u = parameters(L,1,Emax,eps)
+        T = L/v; phi = v/2
+        Param = [L,Emax,v,Emin,q,N_0,u,T,phi]
+        K = math.floor(L*n); M = math.floor(T*n)
+        dt = T/M; dx = L/K
+
+        time = []
+        Norm = []
+
+        for i in range(M+1):
+            time.append(i*dt)
+            R,I,N = analytical_solutions(Param,i*dt,K)
+            Norm.append(norm(R,dx) + norm(I,dx))
+
+        dNorm = [Norm[i]-Norm[0] for i in range(len(Norm))]
+        plt.plot(time,dNorm,label="Emax="+str(Emax))
+        plt.legend()
+    plt.xlabel("time")
+    plt.ylabel("Error of Norm")
+    plt.show()
+
+#checking_invariants(10,15)
+
+###############################################################################
+#スキーム本体
+
 # Glassey スキーム
-def Glassey(K,M):
+def Glassey(Param,K,M):
     start = time.perf_counter()
     dx = L/K; dt = T/M #print(dt,dx)
 
     # 数値解の記録
     Rs = []; Is = []; Ns = []
-    R_now,I_now,N_now,N_next = initial_condition_common(K,M)[:4]
+    R_now,I_now,N_now,N_next = initial_condition_common(Param,K,M)[:4]
     Rs.append(R_now); Is.append(I_now); Ns.append(N_now); Ns.append(N_next)
 
     # ここまでに数値解を計算した時刻
@@ -286,9 +321,9 @@ def Glassey(K,M):
             plt.show()
     return Rs,Is,Ns
 
-def checking_Glassey(K,M):
+def checking_Glassey(Param,K,M):
     dx = L/K; dt = T/M #print(dt,dx)
-    Rs,Is,Ns = Glassey(K,M)[:3]
+    Rs,Is,Ns = Glassey(Param,K,M)[:3]
     eEs = [];eNs = []
     rEs = [];rNs = []
 
@@ -297,13 +332,7 @@ def checking_Glassey(K,M):
     RANGE = [i for i in range(len(Rs))]
     #RANGE = [len(Rs)-1] # 最終時刻での誤差だけ知りたいとき
     for i in RANGE:
-        W = [WW*(k*dx - v*i*dt) for k in range(K)]
-        dn = [scipy.special.ellipj(W[k],qq)[2] for k in range(K)]
-        F = [Emax*dn[k] for k in range(K)]
-
-        tR = [F[k]*math.cos(phi*(k*dx-u*i*dt)) for k in range(K)]
-        tI = [F[k]*math.sin(phi*(k*dx-u*i*dt)) for k in range(K)]
-        tN = [-F[k]**2/vv2 + N_0 for k in range(K)]
+        tR,tI,tN = analytical_solutions(Param,i*dt,K)
 
         tnorm = (norm(tR,dx) + norm(tI,dx))**0.5
 
@@ -318,13 +347,13 @@ def checking_Glassey(K,M):
 
 # DVDMスキーム本体
 # Newton法の初期値をGlasseyで求める
-def DVDM_Glassey(K,M,eps):
+def DVDM_Glassey(Param,K,M,eps):
     start = time.perf_counter()
     dx = L/K; dt = T/M; #print(dt,dx)
 
     # 数値解の記録
     Rs = []; Is = []; Ns = []; Vs = []
-    R_now,I_now,N_now,V_now,N_next = initial_condition_DVDM(K,M)
+    R_now,I_now,N_now,V_now,N_next = initial_condition_DVDM(Param,K,M)
     Rs.append(R_now); Is.append(I_now); Ns.append(N_now); Vs.append(V_now)
 
     m = 0
@@ -397,7 +426,7 @@ def DVDM_Glassey(K,M,eps):
         dNorm = [abs(Norm[i] - Norm[0]) for i in range(len(Rs))]
         rNorm = [dNorm[i]/Norm[0] for i in range(len(Rs))]
 
-        Energy = [energy_DVDM(Rs[i],Is[i],Ns[i],Vs[i],dt,dx) for i in range(len(Rs))]
+        Energy = [energy_DVDM(Rs[i],Is[i],Ns[i],Vs[i],dx) for i in range(len(Rs))]
         dEnergy = [abs(Energy[i] - Energy[0]) for i in range(len(Rs))]
         rEnergy = [dEnergy[i]/abs(Energy[0]) for i in range(len(Rs))]
 
@@ -417,9 +446,9 @@ def DVDM_Glassey(K,M,eps):
             plt.show()
     return Rs,Is,Ns,Vs
 
-def checking_DVDM(K,M,eps):
+def checking_DVDM(Param,K,M,eps):
     dx = L/K; dt = T/M #print(dt,dx)
-    Rs,Is,Ns = DVDM_Glassey(K,M,eps)[:3]
+    Rs,Is,Ns = DVDM_Glassey(Param,K,M,eps)[:3]
     eEs = []; eNs = []
     rEs = []; rNs = []
 
@@ -428,13 +457,7 @@ def checking_DVDM(K,M,eps):
     RANGE = [i for i in range(len(Rs))]
     #RANGE = [len(Rs)-1] # 最終時刻での誤差だけ知りたいとき
     for i in RANGE:
-        W = [WW*(k*dx - v*i*dt) for k in range(K)]
-        dn = [scipy.special.ellipj(W[k],qq)[2] for k in range(K)]
-        F = [Emax*dn[k] for k in range(K)]
-
-        tR = [F[k]*math.cos(phi*(k*dx-u*i*dt)) for k in range(K)]
-        tI = [F[k]*math.sin(phi*(k*dx-u*i*dt)) for k in range(K)]
-        tN = [-F[k]**2/vv2 + N_0 for k in range(K)]
+        tR,tI,tN = analytical_solutions(Param,i*dt,K)
 
         tnorm = (norm(tR,dx) + norm(tI,dx))**0.5
 
@@ -447,12 +470,12 @@ def checking_DVDM(K,M,eps):
         print("t:",32*(i+1)/4,",",eEs[j],eNs[j],",",rEs[j],rNs[j])
     return (dx**2 + dt**2)**0.5,eEs,eNs
 
-N = 100
+N = 1
 K = math.floor(L*N)
 M = math.floor(T*N)
 
-print("L=",L,"Emax=",Emax)
-print("N=",N,"dt=",T/M,"dx=",L/K)
-print(checking_Glassey(K,M))
-#print(checking_DVDM(K,M,10**(-5)))
-#print(checking_DVDM(K,M,10**(-8)))
+#print("L=",L,"Emax=",Emax)
+#print("N=",N,"dt=",T/M,"dx=",L/K)
+#print(checking_Glassey(Param,K,M))
+#print(checking_DVDM(Param,K,M,10**(-5)))
+#print(checking_DVDM(Param,K,M,10**(-8)))
