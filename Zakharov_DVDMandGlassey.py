@@ -220,8 +220,7 @@ def energy_Glassey(R,I,N1,N2,DDI,dt,dx):
 # Glassey スキーム
 def Glassey(K,M):
     start = time.perf_counter()
-    dx = L/K; dt = T/M
-    print(dt,dx)
+    dx = L/K; dt = T/M #print(dt,dx)
 
     # 数値解の記録
     Rs = []; Is = []; Ns = []
@@ -276,7 +275,7 @@ def Glassey(K,M):
         print("初期値に対するノルムの最大誤差比:",max(rNorm))
 
         print("初期値に対するエネルギーの最大誤差:",max(dEnergy))
-        print("初期値に対するノルムの最大誤差比:",max(rEnergy))
+        print("初期値に対するエネルギーの最大誤差比:",max(rEnergy))
         if WantToPlot:
             Time = [i for i in range(1,len(Rs))]
             plt.plot(Time,dNorm,label="Norm")
@@ -290,8 +289,8 @@ def Glassey(K,M):
 def checking_Glassey(K,M):
     dx = L/K; dt = T/M #print(dt,dx)
     Rs,Is,Ns = Glassey(K,M)[:3]
-    eRs = []; eIs = [];eNs = []
-    rRs = []; rIs = [];rNs = []
+    eEs = [];eNs = []
+    rEs = [];rNs = []
 
     vv = (1 - v*v)**0.5; vv2 = 1 - v*v; WW = Emax/(2**0.5*vv); qq = q**2
 
@@ -308,11 +307,14 @@ def checking_Glassey(K,M):
 
         tnorm = (norm(tR,dx) + norm(tI,dx))**0.5
 
-        eRs.append(dist(Rs[i],tR,dx)); eIs.append(dist(Is[i],tI,dx)); eNs.append(dist(Ns[i],tN,dx))
-        rRs.append(eRs[i]/tnorm); rIs.append(eIs[i]/tnorm); rNs.append(eNs[i]/norm(tN,dx)**2)
-    print("各要素の最大誤差:",max(eRs),max(eIs),max(eNs))
-    print("各要素の最大誤差比:",max(rRs),max(rIs),max(rNs))
-    return (dx**2 + dt**2)**0.5,eRs,eIs,eNs
+        eEs.append((dist(Rs[i],tR,dx)**2+dist(Is[i],tI,dx)**2)**0.5); eNs.append(dist(Ns[i],tN,dx))
+        rEs.append(eEs[i]/tnorm); rNs.append(eNs[i]/norm(tN,dx)**2)
+    print("各要素の最大誤差:",max(eEs),max(eNs))
+    print("各要素の最大誤差比:",max(rEs),max(rNs))
+    for i in range(4):
+        j = math.floor(T*(i+1)/(4*dt))
+        print("t:",32*(i+1)/4,",",eEs[j],eNs[j],",",rEs[j],rNs[j])
+    return (dx**2 + dt**2)**0.5,eEs,eNs
 
 # DVDMスキーム本体
 # Newton法の初期値をGlasseyで求める
@@ -403,7 +405,7 @@ def DVDM_Glassey(K,M,eps):
         print("初期値に対するノルムの最大誤差比:",max(rNorm))
 
         print("初期値に対するエネルギーの最大誤差:",max(dEnergy))
-        print("初期値に対するノルムの最大誤差比:",max(rEnergy))
+        print("初期値に対するエネルギーの最大誤差比:",max(rEnergy))
 
         if WantToPlot:
             Time = [i for i in range(len(Rs))]
@@ -418,8 +420,8 @@ def DVDM_Glassey(K,M,eps):
 def checking_DVDM(K,M,eps):
     dx = L/K; dt = T/M #print(dt,dx)
     Rs,Is,Ns = DVDM_Glassey(K,M,eps)[:3]
-    eRs = []; eIs = [];eNs = []
-    rRs = []; rIs = [];rNs = []
+    eEs = []; eNs = []
+    rEs = []; rNs = []
 
     vv = (1 - v*v)**0.5; vv2 = 1 - v*v; WW = Emax/(2**0.5*vv); qq = q**2
 
@@ -436,16 +438,21 @@ def checking_DVDM(K,M,eps):
 
         tnorm = (norm(tR,dx) + norm(tI,dx))**0.5
 
-        eRs.append(dist(Rs[i],tR,dx)); eIs.append(dist(Is[i],tI,dx)); eNs.append(dist(Ns[i],tN,dx))
-        rRs.append(eRs[i]/tnorm); rIs.append(eIs[i]/tnorm); rNs.append(eNs[i]/norm(tN,dx)**2)
-    print("各要素の最大誤差:",max(eRs),max(eIs),max(eNs))
-    print("各要素の最大誤差比:",max(rRs),max(rIs),max(rNs))
-    return (dx**2 + dt**2)**0.5,eRs,eIs,eNs
+        eEs.append((dist(Rs[i],tR,dx)**2+dist(Is[i],tI,dx)**2)**0.5); eNs.append(dist(Ns[i],tN,dx))
+        rEs.append(eEs[i]/tnorm); rNs.append(eNs[i]/norm(tN,dx)**2)
+    print("各要素の最大誤差:",max(eEs),max(eNs))
+    print("各要素の最大誤差比:",max(rEs),max(rNs))
+    for i in range(4):
+        j = math.floor(T*(i+1)/(4*dt))
+        print("t:",32*(i+1)/4,",",eEs[j],eNs[j],",",rEs[j],rNs[j])
+    return (dx**2 + dt**2)**0.5,eEs,eNs
 
-N = 1
+N = 100
 K = math.floor(L*N)
-M = math.floor(T*N**2)
+M = math.floor(T*N)
 
-checking_Glassey(K,M)
-checking_DVDM(K,M,10**(-5))
+print("L=",L,"Emax=",Emax)
+print("N=",N,"dt=",T/M,"dx=",L/K)
+print(checking_Glassey(K,M))
+#print(checking_DVDM(K,M,10**(-5)))
 #print(checking_DVDM(K,M,10**(-8)))
