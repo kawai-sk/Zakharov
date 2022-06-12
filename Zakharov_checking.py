@@ -265,7 +265,7 @@ def checking_invariants(n):
     plt.show()
 
 def checking_norms(n):
-    Emaxs = [0.18,1,1.3]
+    Emaxs = [0.18,1,2.1]
     Errors = []
     L = 20; m = 1; eps = 10**(-9)
     for Emax in Emaxs:
@@ -282,10 +282,12 @@ def checking_norms(n):
             time.append(i/M)
             dx = L/K
             vv = (1 - v*v)**0.5; vv2 = 1 - v*v; WW = Emax/(2**0.5*vv)
+            print(Emax,WW,1-q,1-q*q)
             W = [WW*(k*dx-v*i*dt) for k in range(K)]
-            dn = [Emax**2*scipy.special.ellipj(W[k],q)[2] for k in range(len(W))]
+            dn = [Emax**2*scipy.special.ellipj(W[k],q*q)[2] for k in range(len(W))]
             Norm.append(norm(dn,dx))
         plt.plot(time,Norm,label="Emax="+str(Emax))
+        plt.legend()
     plt.xlabel("time")
     plt.ylabel("Norm")
     plt.show()
@@ -306,7 +308,7 @@ def checking_norms2(Emax,n):
         for i in range(0,M+1):
             print(i)
             W = [WW*(k*dx-v*i*dt) for k in range(K)]
-            dn = [Emax**2*scipy.special.ellipj(W[k],q)[2] for k in range(len(W))]
+            dn = [Emax**2*scipy.special.ellipj(W[k],q*q)[2] for k in range(len(W))]
             Norm.append(norm(dn,dx))
         plt.plot(time,Norm,label="K="+str(K))
     plt.xlabel("time")
@@ -327,7 +329,7 @@ def checking_norms3(Emax):
         sn = [scipy.special.ellipj(W[k],q)[0] for k in range(len(W))]
         print(max([abs(dn[k]-(1-q*sn[k]**2)**0.5)for k in range(len(W))]))
 
-ploting_initial_solutions(Param,100)
-#checking_norms(5)
-#checking_norms2(1.3,20)
+#ploting_initial_solutions(Param,100)
+checking_norms(1)
+#checking_norms2(2.1,10)
 #checking_norms2(1,10)
