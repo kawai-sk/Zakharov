@@ -6,6 +6,9 @@ import matplotlib.cm as cm
 import numpy as np
 import random
 import time
+import os
+import pandas as pd
+import csv
 from mpmath import *
 
 ###############################################################################
@@ -79,7 +82,7 @@ def parameters(L,m,Emax,eps):
 # Emax < 0.17281841278823945 を目安に Emin > Emax の事故が起こる
 # Emax > 2.173403970708827 を目安に scipy.special.ellipk が機能しなくなる
 # Emax > 4/3 を目安に scipy.special.ellipj が厳密ではなくなる
-L = 20; Emax = 2.1; m = 1; eps = 10**(-9)
+L = 20; Emax = 1; m = 1; eps = 10**(-9)
 v, Emin, q, N_0, u = parameters(L,1,Emax,eps)
 T = L/v; phi = v/2
 Param = [L,Emax,v,Emin,q,N_0,u,T,phi]
@@ -298,93 +301,6 @@ def Glassey(Param,K,M):
         plt.show()
     return Rs,Is,Ns
 
-def Glassey2(Param,K,M):
-    start = time.perf_counter()
-    dx = L/K; dt = T/M #print(dt,dx)
-
-    # 数値解の記録
-    Es = []; Ns = []
-    R_now,I_now,N_now,N_next,_ = initial_condition_common(Param,K,M)
-    E_now = [R_now[k]+1j*I_now[k] for k in range(K)]
-    Es.append(E_now); Ns.append(N_now); Ns.append(N_next)
-
-    # ここまでに数値解を計算した時刻
-    ri_t = 0
-    n_t = 1
-
-    # 各mで共通して使える行列
-    Ik = np.identity(K)
-    Dx = (1/dx**2)*(-2*Ik + np.eye(K,k=1) + np.eye(K,k=K-1) + np.eye(K,k=-1) + np.eye(K,k=-K+1))
-    ID = np.linalg.inv(Ik-0.5*dt**2*Dx)
-
-    WantToCheck = True
-    if WantToCheck:
-        ts = [0]
-        dE,dN = [0],[0]
-
-    while ri_t < M or n_t < M:
-        #print(ri_t,n_t,M)
-        if ri_t < n_t: # Nm,N(m+1),Em から E(m+1)を求める
-            Dn = np.diag([N_now[k]+N_next[k] for k in range(K)])
-            D = dt*(0.5*Dx - 0.25*Dn)
-            b = np.linalg.solve(1j*Ik+D,[2j*E_now[k] for k in range(K)])
-            E_next = -np.array(E_now) + b
-            Es.append(E_next)
-            E_now = E_next
-            ri_t += 1
-            if ri_t%10 == 0:
-                print(ri_t,n_t,M) #実行の進捗の目安として
-            if WantToCheck:
-                ts.append(ri_t)
-                tE,tN = analytical_solutions2(Param,ri_t*dt,K)
-                dE.append(max([abs(E_now[k]-tE[k]) for k in range(K)]))
-                dN.append(max([abs(N_next[k]-tN[k]) for k in range(K)]))
-        else: # N(m-1),Nm,Em から N(m+1)を求める
-            N_before = N_now; N_now = N_next
-            E2 = np.array([abs(I_now[k])**2 for k in range(K)])
-            NN = np.array(N_now) + E2
-            N_next = np.dot(ID,2*NN) - np.array(N_before) - 2*E2
-            Ns.append(N_next)
-            n_t += 1
-            tN = analytical_solutions(Param,n_t*dt,K)[2]
-    end = time.perf_counter()
-    print("Glassey実行時間:",end-start)
-
-    WantToKnow = False #ノルム・エネルギーを知りたいとき
-    WantToPlot = False #ノルム・エネルギーを描画したいとき
-    if WantToKnow:
-        Norm = [norm(Rs[i],dx) + norm(Is[i],dx) for i in range(len(Rs))]
-        dNorm = [abs(Norm[i] - Norm[0]) for i in range(1,len(Rs))]
-        rNorm = [dNorm[i]/Norm[0] for i in range(len(Rs)-1)]
-
-        DD = -2*np.eye(K-1,k=0) + np.eye(K-1,k=1) + np.eye(K-1,k=-1)
-        DDI = np.linalg.inv(DD)
-        Energy = [energy_Glassey(Rs[i+1],Is[i+1],Ns[i],Ns[i+1],DDI,dt,dx) for i in range(len(Rs)-1)]
-        dEnergy = [abs(Energy[i] - Energy[0]) for i in range(len(Rs)-1)]
-        rEnergy = [dEnergy[i]/abs(Energy[0]) for i in range(len(Rs)-1)]
-
-        print("初期値に対するノルムの最大誤差:",max(dNorm))
-        print("初期値に対するノルムの最大誤差比:",max(rNorm))
-
-        print("初期値に対するエネルギーの最大誤差:",max(dEnergy))
-        print("初期値に対するエネルギーの最大誤差比:",max(rEnergy))
-        if WantToPlot:
-            Time = [i for i in range(1,len(Rs))]
-            plt.plot(Time,dNorm,label="Norm")
-            plt.plot(Time,dEnergy,label="Energy")
-            plt.xlabel("time")
-            plt.ylabel("errors of Norm and Energy")
-            plt.legend()
-            plt.show()
-    if WantToCheck:
-        fig = plt.figure()
-        ax1 = fig.add_subplot(1, 2, 1); ax2 = fig.add_subplot(1, 2, 2)
-        l1,l2 = "dE","dN"
-        ax1.plot(ts, dE, label=l1); ax2.plot(ts, dN, label=l2)
-        ax1.legend(); ax2.legend()
-        plt.show()
-    return Es,Ns
-
 def checking_Glassey(Param,K,M):
     dx = L/K; dt = T/M #print(dt,dx)
     Rs,Is,Ns = Glassey(Param,K,M)[:3]
@@ -436,7 +352,7 @@ def DVDM_Glassey(Param,K,M,eps):
     while m*dt < T:
         t = 0
         dN = 0.5*dt*Dx - 0.25*dt*np.diag(N_now)
-        dR_now = 0.25*np.diag(R_now); dI_now = 0.25*np.diag(I_now)
+        dR_now = 0.25*dt*np.diag(R_now); dI_now = 0.25*dt*np.diag(I_now)
 
         F0 = np.array([- R_now[i%K] + 0.5*dt*DI_now[i%K] if i//K == 0
         else -I_now[i%K] - 0.5*dt*DR_now[i%K] if i//K == 1
@@ -549,6 +465,7 @@ def checking_DVDM(Param,K,M,eps):
         print("t:",32*(i+1)/4,",",eEs[j],eNs[j],",",rEs[j],rNs[j])
     return (dx**2 + dt**2)**0.5,eEs,eNs
 
+# Glassey,DVDM,解析解を T/3 ごとに比較
 def comparing(Param,K,M,eps):
     dx = L/K; dt = T/M
     RG,IG,NG = Glassey(Param,K,M)
@@ -582,7 +499,7 @@ def comparing(Param,K,M,eps):
     plt.show()
 
 
-N = 50
+N = 5
 K = math.floor(L*N)
 M = math.floor(T*N)
 
@@ -593,4 +510,128 @@ M = math.floor(T*N)
 #DVDM_Glassey(Param,K,M,10**(-5))
 #print(checking_DVDM(Param,K,M,10**(-5)))
 #print(checking_DVDM(Param,K,M,10**(-8)))
-comparing(Param,K,M,10**(-8))
+#comparing(Param,K,M,10**(-8))
+
+###############################################################################
+#収束先の検証
+
+def comp_nsGlassey(L,Emax,N1,N2):
+    m = 1; eps = 10**(-9)
+    v, Emin, q, N_0, u = parameters(L,1,Emax,eps)
+    T = L/v; phi = v/2
+    Param = [L,Emax,v,Emin,q,N_0,u,T,phi]
+    Rf,If,Nf = [],[],[]
+    numbers = [N1,N2]
+    fnames = ["L="+str(L)+"Emax="+str(Emax)+"N="+str(numbers[i])+"Glassey.csv" for i in range(2)]
+    for i in range(2):
+        n = numbers[i]
+        fname = fnames[i]
+        K = math.floor(L*n); M = math.floor(T*n)
+        if not os.path.isfile(fname):
+            Rs,Ns,Is = Glassey(Param,K,M)
+            pd.DataFrame(Rs+Ns+Is).to_csv(fname)
+        with open(fname) as f:
+            for row in csv.reader(f, quoting=csv.QUOTE_NONNUMERIC):
+                if row[0] == M:
+                    Rf.append(np.array(row[1:]))
+                if row[0] == 2*M+1:
+                    If.append(np.array(row[1:]))
+                if row[0] == 3*M+2:
+                    Nf.append(np.array(row[1:]))
+    gx = math.gcd(len(Rf[0]),len(Rf[1]))
+    lx = [int(len(Rf[0])/gx),int(len(Rf[1])/gx)]
+
+    error = 0
+    dx = L/gx
+    for k in range(gx):
+        error += (Rf[0][k*lx[0]] - Rf[1][k*lx[1]])**2*dx
+        error += (If[0][k*lx[0]] - If[1][k*lx[1]])**2*dx
+        error += (Nf[0][k*lx[0]] - Nf[1][k*lx[1]])**2*dx
+    return error**0.5
+
+def conv_nsGlassey(L,Emax,n):
+    m = 1; eps = 10**(-9)
+    v, Emin, q, N_0, u = parameters(L,1,Emax,eps)
+    T = L/v; phi = v/2
+    Param = [L,Emax,v,Emin,q,N_0,u,T,phi]
+    fname = "L="+str(L)+"Emax="+str(Emax)+"N="+str(n)+"Glassey.csv"
+    K = math.floor(L*n); M = math.floor(T*n)
+    if not os.path.isfile(fname):
+        Rs,Ns,Is = Glassey(Param,K,M)
+        pd.DataFrame(Rs+Ns+Is).to_csv(fname)
+    with open(fname) as f:
+        for row in csv.reader(f, quoting=csv.QUOTE_NONNUMERIC):
+            if row[0] == M:
+                Rf = np.array(row[1:])
+            if row[0] == 2*M+1:
+                If = np.array(row[1:])
+            if row[0] == 3*M+2:
+                Nf = np.array(row[1:])
+
+    error = 0
+    dx = L/K
+    tR,tI,tN = analytical_solutions(Param,T,K)
+    return (dist(Rf,tR,dx)**2 + dist(If,tI,dx)**2 + dist(Nf,tN,dx)**2)**0.5
+
+def comp_nsDVDM(L,Emax,N1,N2):
+    m = 1; eps = 10**(-9)
+    v, Emin, q, N_0, u = parameters(L,1,Emax,eps)
+    T = L/v; phi = v/2
+    Param = [L,Emax,v,Emin,q,N_0,u,T,phi]
+    Rf,If,Nf = [],[],[]
+    numbers = [N1,N2]
+    fnames = ["L="+str(L)+"Emax="+str(Emax)+"N="+str(numbers[i])+"DVDM.csv" for i in range(2)]
+    for i in range(2):
+        n = numbers[i]
+        fname = fnames[i]
+        K = math.floor(L*n); M = math.floor(T*n)
+        if not os.path.isfile(fname):
+            Rs,Ns,Is,_ = DVDM_Glassey(Param,K,M,eps)
+            pd.DataFrame(Rs+Ns+Is).to_csv(fname)
+        with open(fname) as f:
+            for row in csv.reader(f, quoting=csv.QUOTE_NONNUMERIC):
+                if row[0] == M:
+                    Rf.append(np.array(row[1:]))
+                if row[0] == 2*M+1:
+                    If.append(np.array(row[1:]))
+                if row[0] == 3*M+2:
+                    Nf.append(np.array(row[1:]))
+    gx = math.gcd(len(Rf[0]),len(Rf[1]))
+    lx = [int(len(Rf[0])/gx),int(len(Rf[1])/gx)]
+
+    error = 0
+    dx = L/gx
+    for k in range(gx):
+        error += (Rf[0][k*lx[0]] - Rf[1][k*lx[1]])**2*dx
+        error += (If[0][k*lx[0]] - If[1][k*lx[1]])**2*dx
+        error += (Nf[0][k*lx[0]] - Nf[1][k*lx[1]])**2*dx
+    return error**0.5
+
+def conv_nsDVDM(L,Emax,n):
+    m = 1; eps = 10**(-9)
+    v, Emin, q, N_0, u = parameters(L,1,Emax,eps)
+    T = L/v; phi = v/2
+    Param = [L,Emax,v,Emin,q,N_0,u,T,phi]
+    fname = "L="+str(L)+"Emax="+str(Emax)+"N="+str(n)+"DVDM.csv"
+    K = math.floor(L*n); M = math.floor(T*n)
+    if not os.path.isfile(fname):
+        Rs,Ns,Is,_ = DVDM_Glassey(Param,K,M,eps)
+        pd.DataFrame(Rs+Ns+Is).to_csv(fname)
+    with open(fname) as f:
+        for row in csv.reader(f, quoting=csv.QUOTE_NONNUMERIC):
+            if row[0] == M:
+                Rf = np.array(row[1:])
+            if row[0] == 2*M+1:
+                If = np.array(row[1:])
+            if row[0] == 3*M+2:
+                Nf = np.array(row[1:])
+
+    error = 0
+    dx = L/K
+    tR,tI,tN = analytical_solutions(Param,T,K)
+    return (dist(Rf,tR,dx)**2 + dist(If,tI,dx)**2 + dist(Nf,tN,dx)**2)**0.5
+
+print(comp_nsGlassey(20,2.1,60,70))
+#print(conv_nsGlassey(20,2.1,50))
+#print(comp_nsDVDM(20,2.1,30,40))
+#print(conv_nsDVDM(20,2.1,30))
