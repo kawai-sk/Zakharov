@@ -631,7 +631,7 @@ def conv_nsDVDM(L,Emax,n):
     tR,tI,tN = analytical_solutions(Param,T,K)
     return (dist(Rf,tR,dx)**2 + dist(If,tI,dx)**2 + dist(Nf,tN,dx)**2)**0.5
 
-print(comp_nsGlassey(20,2.1,60,70))
-#print(conv_nsGlassey(20,2.1,50))
+#print(comp_nsGlassey(20,2.1,50,60))
+#print(conv_nsGlassey(20,1,30))
 #print(comp_nsDVDM(20,2.1,30,40))
-#print(conv_nsDVDM(20,2.1,30))
+print(conv_nsDVDM(20,1,30))
