@@ -35,35 +35,35 @@ def analytical_solutions_infinite(Param2,t,K):
 
     return R,I,N
 
-def analytical_solutions_infiniteV(Param,t,K,DDI):
+def analytical_solutions_infiniteV(Param,t,K):
     Ltent,T,Emax,v,u,phi = Param2
     dx = Ltent/K
-    vv = (1 - v*v)**0.5; vv2 = 1 - v*v; WW = Emax/(2**0.5*vv); coef = -2**0.5*Emax**3*v/vv*3
+    vv = (1 - v*v)**0.5; vv2 = 1 - v*v; WW = Emax/(2**0.5*vv)
+    coef1 = -2**0.5*v*Emax/vv; coef2 = Emax**2*v/vv2
     W = np.array([WW*((k-K)*dx-v*t) for k in range(3*K)])
     F = Emax/np.cosh(W)
 
     R = [F[k]*math.cos(phi*((k-K)*dx-u*t)) for k in range(len(W))]
     I = [F[k]*math.sin(phi*((k-K)*dx-u*t)) for k in range(len(W))]
     N = [-F[k]**2/vv2 for k in range(len(W))]
-    Nt = [coef * np.sinh(W[k])/np.cosh(W[k])**3 for k in range(1,len(W))]
+    V = [coef1*np.tanh(W[k]) for k in range(len(W))]
+    dV = [coef2/np.cosh(W[k])**2 for k in range(len(W))]
 
-    V = dx**2 * np.dot(DDI,Nt)
-    V = [0]+[V[i] for i in range(K-1)]
+    return R,I,N,V,dV
 
-    return R,I,N,V
 ###############################################################################
 #初期条件
 
 #差分
 def FD(v,dx):
     K = len(v)
-    return [(v[(k+1)%K] - v[k])/dx for k in range(K)]
+    return [(v[k+1] - v[k])/dx for k in range(K-1)] + [-v[K-2]/dx]
 def CD(v,dx):
     K = len(v)
-    return [(v[(k+1)%K] - v[(k-1)%K])/(2*dx) for k in range(K)]
+    return [v[1]/(2*dx)]+[(v[k+1] - v[k-1])/(2*dx) for k in range(1,K-1)] + [-v[K-2]/(2*dx)]
 def SCD(v,dx):
     K = len(v)
-    return [(v[(k+1)%K] -2*v[k] + v[(k-1)%K])/dx**2 for k in range(K)]
+    return [(v[1] -2*v[0])/dx**2]+[(v[k+1] -2*v[k] + v[k-1])/dx**2 for k in range(1,K-1)]+[(-2*v[K-1] + v[K-2])/dx**2]
 
 #L2ノルム
 def norm(v,dx):
@@ -78,6 +78,13 @@ def dist(a,b,dx):
     for i in range(len(a)):
         dis += abs(a[i]-b[i])**2*dx
     return dis**0.5
+
+def energy(R,I,N,dV,dx):
+    dR = FD(R,dx); dI = FD(I,dx)
+    Energy = norm(dR,dx) + norm(dI,dx) + 0.5*norm(N,dx) + 0.5*norm(dV,dx)
+    for i in range(len(R)):
+        Energy += N[i]*(R[i]**2 + I[i]**2)*dx
+    return Energy
 
 def energy_DVDM(R,I,N,V,dx):
     dR = FD(R,dx); dI = FD(I,dx); dV = FD(V,dx)
@@ -105,18 +112,21 @@ def initial_condition_infinite_common(Param2,K,M):
     return R0,I0,N0,N1,Nt0
 
 def initial_condition_infinite_DVDM(Param2,K,M):
-    Ltent,T = Param2[:2]
+    Ltent,T,Emax,v = Param2[:4]
     dx = Ltent/K; dt = T/M
-    R0,I0,N0,N1,Nt0 = initial_condition_infinite_common(Param2,K,M)
 
-    DD = -2*np.eye(len(N0)-1,k=0) + np.eye(len(N0)-1,k=1) + np.eye(len(N0)-1,k=-1)
-    DDI = np.linalg.inv(DD)
+    R0,I0,N0,V0,dV0 = analytical_solutions_infiniteV(Param2,0,K)
 
-    dN = [Nt0[k] for k in range(1,len(N0))]
-    V0 = dx**2 * np.dot(DDI,dN)
-    V0 = [0]+[V0[i] for i in range(len(N0)-1)]
+    vv = (1 - v*v)**0.5; WW = Emax*dx/(2**0.5*vv); coef = -2**0.5*Emax**3*v/vv*3
 
-    return R0,I0,N0,V0,N1
+    W = [WW*(k-K) for k in range(3*K)]
+    Nt0 = [coef * np.sinh(W[k])/np.cosh(W[k])**3 for k in range(len(R0))]
+
+    d2N0 = SCD(N0,dx)
+    dR0 = CD(R0,dx); d2R0 = SCD(R0,dx)
+    dI0 = CD(I0,dx); d2I0 = SCD(I0,dx)
+    N1 = [N0[k] + dt*Nt0[k] + dt**2*(0.5*d2N0[k] + dR0[k]**2 + dI0[k]**2 + R0[k]*d2R0[k] + I0[k]*d2I0[k]) for k in range(len(R0))]
+    return R0,I0,N0,V0,N1,dV0
 
 ###############################################################################
 #解析解の描画
@@ -154,24 +164,22 @@ def checking_invariants(n):
         time = []
         Norms = []
         Energys = []
-        DD = -2*np.eye(3*K-1,k=0) + np.eye(3*K-1,k=1) + np.eye(3*K-1,k=-1)
-        DDI = np.linalg.inv(DD)
 
         for i in range(M+1):
             time.append(i*dt)
-            R,I,N,V = analytical_solutions_infiniteV(Param2,i*dt,K,DDI)
+            R,I,N,dV = analytical_solutions_infiniteV(Param2,i*dt,K)
             Norms.append(norm(R,dx) + norm(I,dx))
-            Energys.append(energy_DVDM(R,I,N,V,dx))
+            Energys.append(energy(R,I,N,dV,dx))
 
         plt.plot(time,Norms,label="Emax="+str(Emax)+",norm")
         plt.legend()
-        #plt.plot(time,Energys,label="Emax="+str(Emax)+",Energy")
-        #plt.legend()
+        plt.plot(time,Energys,label="Emax="+str(Emax)+",Energy")
+        plt.legend()
     plt.xlabel("time")
     plt.ylabel("Invariants")
     plt.show()
 
-checking_invariants(10)
+#checking_invariants(10)
 #ploting_initial_solutions_infinite(Param2,math.floor(Ltent*10))
 ###############################################################################
 #スキーム本体
@@ -255,12 +263,9 @@ def DVDM_Glassey_infinite(Param2,K,M,eps):
 
     # 数値解の記録
     Rs = []; Is = []; Ns = []; Vs = []
-    R_now,I_now,N_now,V_now,N_next = initial_condition_infinite_DVDM(Param2,K,M)
+    R_now,I_now,N_now,V_now,N_next = initial_condition_infinite_DVDM(Param2,K,M)[:-1]
     Rs.append(R_now); Is.append(I_now); Ns.append(N_now); Vs.append(V_now)
     K0 = len(R_now)
-
-    tR,tI,tN = analytical_solutions_infinite(Param2,0,K)
-
     m = 0
 
     Ik = np.identity(K0); Zk = np.zeros((K0,K0))
@@ -325,6 +330,7 @@ def DVDM_Glassey_infinite(Param2,K,M,eps):
 
     return [[str(end-start)]+[0 for i in range(len(Rs[0])-1)]],Rs,Is,Ns,Vs
 
+
 def checking_DVDM(Param2,K,M,eps):
     Ltent,T = Param2[:2]
     dx = Ltent/K; dt = T/M #print(dt,dx)
@@ -374,7 +380,7 @@ def comparing(Ltent,Emax,N,eps):
 
     fname = "L="+str(Ltent)+"Emax="+str(Emax)+"N="+str(N)+"DVDMinf.csv"
     if not os.path.isfile(fname):
-        time,Rs,Ns,Is = DVDM_Glassey_infinite(Param2,K,M,eps)[:4]
+        time,Rs,Ns,Is = DVDM_Glassey_infinite2(Param2,K,M)[:4]
         pd.DataFrame(time+Rs+Ns+Is).to_csv(fname)
     with open(fname) as f:
         for row in csv.reader(f, quoting=csv.QUOTE_NONNUMERIC):
@@ -411,11 +417,11 @@ def comparing(Ltent,Emax,N,eps):
         ax[0].legend(); ax[1].legend(); ax[2].legend()
     plt.show()
 
-
-N = 20
+N = 5
 K = math.floor(Ltent*N)
 M = math.floor(T*N)
 
+#DVDM_Glassey_infinite(Param2,K,M,eps)
 #print("L=",L,"Emax=",Emax)
 #print("N=",N,"dt=",T/M,"dx=",L/K)
 #print(checking_Glassey(Param,K,M))
@@ -424,3 +430,45 @@ M = math.floor(T*N)
 #print(checking_DVDM(Param,K,M,10**(-5)))
 #print(checking_DVDM(Param,K,M,10**(-8)))
 #comparing(20,1,10,10**(-8))
+#comparing(20,1,5,10**(-8))
+
+def ploting_DVDM(Ltent,Emax,N,eps,times):
+    m = 1; v = 4*math.pi*m/Ltent; u = v/2 - Emax**2/(v*(1-v**2))
+    T = Ltent/v; phi = v/2
+    Param2 = [Ltent,T,Emax,v,u,phi]
+    K = math.floor(Ltent*N); M = math.floor(T*N)
+    dx = Ltent/K; dt = T/M
+
+    RD,ID,ND = [],[],[]
+
+    fname = "L="+str(Ltent)+"Emax="+str(Emax)+"N="+str(N)+"DVDMinf.csv"
+    if not os.path.isfile(fname):
+        time,Rs,Ns,Is = DVDM_Glassey_infinite(Param2,K,M,eps)[:4]
+        pd.DataFrame(time+Rs+Ns+Is).to_csv(fname)
+    with open(fname) as f:
+        for row in csv.reader(f, quoting=csv.QUOTE_NONNUMERIC):
+            if row[0] in [t*M//times+1 for t in range(times+1)]:
+                RD.append(np.array(row[1:]))
+            if row[0] in [M+2+t*M//times+1 for t in range(times+1)]:
+                ID.append(np.array(row[1:]))
+            if row[0] in [2*M+3+t*M//times+1 for t in range(times+1)]:
+                print(row[0])
+                ND.append(np.array(row[1:]))
+    x = np.linspace(-Ltent, 2*Ltent, 3*K)
+
+    fig = plt.figure()
+    ax1 = fig.add_subplot(1, 3, 1)
+    ax2 = fig.add_subplot(1, 3, 2)
+    ax3 = fig.add_subplot(1, 3, 3)
+
+    for i in range(times):
+        tR,tI,tN = analytical_solutions_infinite(Param2,(i*M//times)*dt,K)
+
+        l = str(i*M//times)
+        ax1.plot(x, RD[i], label=l)
+        ax2.plot(x, ID[i], label=l)
+        ax3.plot(x, ND[i], label=l)
+        ax1.legend(); ax2.legend(); ax3.legend()
+    plt.show()
+
+#ploting_DVDM(20,2.1,5,10**(-8),10)
