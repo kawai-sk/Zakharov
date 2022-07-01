@@ -91,35 +91,20 @@ def analytical_solutions(Param,t,K):
     L,Emax,v,Emin,q,N_0,u,T,phi = Param
     dx = L/K
     vv = (1 - v*v)**0.5; vv2 = 1 - v*v; WW = Emax/(2**0.5*vv)
-    #print(Emin,q,N_0,WW)
+    coef1 = -2**0.5*Emax**2*q**2*v/vv*3; coef2 = 2**0.5*v*Emax/vv; coef3 = v*Emax**2/vv2
     W = [WW*(k*dx-v*t) for k in range(K)]
-    dn = [ellipfun('dn',W[k],q*q) for k in range(len(W))]
+    sn = [float(ellipfun('sn',W[k],q*q)) for k in range(len(W))]
+    dn = [float(ellipfun('dn',W[k],q*q)) for k in range(len(W))]
     F = [Emax*dn[k] for k in range(len(W))]
 
     R = [F[k]*math.cos(phi*(k*dx-u*t)) for k in range(len(W))]
     I = [F[k]*math.sin(phi*(k*dx-u*t)) for k in range(len(W))]
     N = [-F[k]**2/vv2 + N_0 for k in range(len(W))]
+    Nt0 = [float(coef1*sn[k]*dn[k]*ellipfun('cn',W[k],q*q)) for k in range(K)]
+    V = [coef2*float(ellipe(sn[k],q*q)) for k in range(len(W))]
+    dV = [coef3*dn[k]**2 for k in range(len(W))]
 
-    return R,I,N
-
-def analytical_solutions_V(Param,t,K,DDI):
-    L,Emax,v,Emin,q,N_0,u,T,phi = Param
-    dx = L/K
-    vv = (1 - v*v)**0.5; vv2 = 1 - v*v; WW = Emax/(2**0.5*vv); coef = -2**0.5*Emax**2*q**2*v/vv*3
-    #print(Emin,q,N_0,WW)
-    W = [WW*(k*dx-v*t) for k in range(K)]
-    dn = [ellipfun('dn',W[k],q*q) for k in range(len(W))]
-    F = [Emax*dn[k] for k in range(len(W))]
-
-    R = [F[k]*math.cos(phi*(k*dx-u*t)) for k in range(len(W))]
-    I = [F[k]*math.sin(phi*(k*dx-u*t)) for k in range(len(W))]
-    N = [-F[k]**2/vv2 + N_0 for k in range(len(W))]
-
-    Nt = [coef*ellipfun('sn',W[k],q*q)*ellipfun('cn',W[k],q*q)*ellipfun('dn',W[k],q*q) for k in range(1,K)]
-    V = dx**2 * np.dot(DDI,Nt)
-    V = [0]+[V[i] for i in range(K-1)]
-
-    return R,I,N,V
+    return R,I,N,Nt0,V,dV
 
 def checking_analycal(n,m):
     Emaxs = [0.18 + (1.3-0.18)*i/m for i in range(m+1)]
@@ -157,6 +142,13 @@ def norm(v,dx):
     return Ltwo
 
 #エネルギー
+def energy(R,I,N,dV,dx):
+    dR = FD(R,dx); dI = FD(I,dx)
+    Energy = norm(dR,dx) + norm(dI,dx) + 0.5*norm(N,dx) + 0.5*norm(dV,dx)
+    for i in range(len(R)):
+        Energy += N[i]*(R[i]**2 + I[i]**2)*dx
+    return Energy
+
 def energy_DVDM(R,I,N,V,dx):
     dR = FD(R,dx); dI = FD(I,dx); dV = FD(V,dx)
     Energy = norm(dR,dx) + norm(dI,dx) + 0.5*norm(N,dx) + 0.5*norm(dV,dx)
@@ -183,44 +175,38 @@ def dist(a,b,dx):
     return dis**0.5
 
 #Taylorで R,I,N の m=1 を求める
-def initial_condition_common(Param,K,M):
+def initial_condition(Param,K,M):
     L,Emax,v,Emin,q,N_0,u,T,phi = Param
     dx = L/K; dt = T/M
 
-    R0,I0,N0 = analytical_solutions(Param,0,K)
-
-    vv = (1 - v*v)**0.5; WW = Emax*dx/(2**0.5*vv); coef = -2**0.5*Emax**2*q**2*v/vv*3
-
-    ellipjs = [scipy.special.ellipj(WW*k,q*q) for k in range(K)]
-    Nt0 = [coef*ellipjs[k][0]*ellipjs[k][1]*ellipjs[k][2] for k in range(K)]
+    R0,I0,N0,Nt0,V0,dV0 = analytical_solutions(Param,0,K)
 
     d2N0 = SCD(N0,dx)
     dR0 = CD(R0,dx); d2R0 = SCD(R0,dx)
     dI0 = CD(I0,dx); d2I0 = SCD(I0,dx)
     N1 = [N0[k] + dt*Nt0[k] + dt**2*(0.5*d2N0[k] + dR0[k]**2 + dI0[k]**2 + R0[k]*d2R0[k] + I0[k]*d2I0[k]) for k in range(K)]
 
-    return R0,I0,N0,N1,Nt0
+    WantToCompare = True
+    if WantToCompare:
+        DD = -2*np.eye(K-1,k=0) + np.eye(K-1,k=1) + np.eye(K-1,k=-1)
+        DDI = np.linalg.inv(DD)
 
-def initial_condition_DVDM(Param,K,M):
-    L,Emax,v,Emin,q,N_0,u,T,phi = Param
-    dx = L/K; dt = T/M
-    R0,I0,N0,N1,Nt0 = initial_condition_common(Param,K,M)
+        dN = [Nt0[k] for k in range(1,K)]
+        V = dx**2 * np.dot(DDI,dN)
+        V = [0]+[V[i] for i in range(K-1)]
+        V0 = [V0[i] - V0[0] for i in range(K)]
+        print(dist(V,V0,dx))
+        print(dist(Nt0,SCD(V,dx),dx))
+        print(dist(Nt0,SCD(V0,dx),dx))
 
-    DD = -2*np.eye(K-1,k=0) + np.eye(K-1,k=1) + np.eye(K-1,k=-1)
-    DDI = np.linalg.inv(DD)
-
-    dN = [Nt0[k] for k in range(1,K)]
-    V0 = dx**2 * np.dot(DDI,dN)
-    V0 = [0]+[V0[i] for i in range(K-1)]
-
-    return R0,I0,N0,V0,N1
+    return R0,I0,N0,N1,V0,dV0
 
 ###############################################################################
 # 真の解の描画
 
 def ploting_initial_solutions(Param,K):
     L = Param[0]
-    R0,I0,N0 = analytical_solutions(Param,0,K)
+    R0,I0,N0 = analytical_solutions(Param,0,K)[:3]
     E0 = [(R0[k]**2 + I0[k]**2)**0.5 for k in range(len(R0))]
 
     fig = plt.figure()
@@ -260,7 +246,7 @@ def ploting_solutions(Param,n):
     plt.show()
 
 def checking_invariants(n):
-    Emaxs = [0.18]
+    Emaxs = [2.1]
     #Emaxs = [0.18 + (1.3-0.18)*i/m for i in range(m+1)]
     Errors = []
     L = 20; m = 1; eps = 10**(-9)
@@ -272,16 +258,23 @@ def checking_invariants(n):
         dt = T/M; dx = L/K
 
         time = []
-        EG = []
-        ED = []
+        Norms = []
+        Energys1 = []
+        Energys2 = []
 
-        for i in range(2*M+1):
+        for i in range(M+1):
+            print(i,M)
             time.append(i*dt)
-            R,I,N = analytical_solutions(Param,i*dt,K)
-            Norm.append(norm(R,dx) + norm(I,dx))
-        plt.plot(time,Norm,label="Emax="+str(Emax))
-    plt.xlabel("Emax")
-    plt.ylabel("Norm")
+            R,I,N,_,V,dV = analytical_solutions(Param,i*dt,K)
+            Norms.append(norm(R,dx) + norm(I,dx))
+            Energys1.append(energy(R,I,N,dV,dx))
+            Energys2.append(energy_DVDM(R,I,N,V,dx))
+        plt.plot(time,Norms,label="Norm,Emax="+str(Emax))
+        plt.plot(time,Energys1,label="Energy(dV),Emax="+str(Emax))
+        plt.plot(time,Energys2,label="Energy(V),Emax="+str(Emax))
+        plt.legend()
+    plt.xlabel("time")
+    plt.ylabel("Invariants")
     plt.show()
 
 def checking_norms(n):
@@ -367,4 +360,5 @@ def checking_energys(n):
 #checking_norms(1)
 #checking_norms2(2.1,10)
 #checking_norms2(1,10)
-checking_energys(10)
+#checking_energys(10)
+checking_invariants(5)

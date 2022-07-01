@@ -194,6 +194,19 @@ def initial_condition(Param,K,M):
     dI0 = CD(I0,dx); d2I0 = SCD(I0,dx)
     N1 = [N0[k] + dt*Nt0[k] + dt**2*(0.5*d2N0[k] + dR0[k]**2 + dI0[k]**2 + R0[k]*d2R0[k] + I0[k]*d2I0[k]) for k in range(K)]
 
+    WantToCompare = True
+    if WantToCompare:
+        DD = -2*np.eye(K-1,k=0) + np.eye(K-1,k=1) + np.eye(K-1,k=-1)
+        DDI = np.linalg.inv(DD)
+
+        dN = [Nt0[k] for k in range(1,K)]
+        V = dx**2 * np.dot(DDI,dN)
+        V = [0]+[V[i] for i in range(K-1)]
+        V0 = [V0[i] - V0[0] for i in range(K)]
+        print(dist(V,V0,dx))
+        print(dist(Nt0,SCD(V,dx),dx))
+        print(dist(Nt0,SCD(V0,dx),dx))
+
     return R0,I0,N0,N1,V0,dV0
 
 ###############################################################################
@@ -218,11 +231,6 @@ def Glassey(Param,K,M):
     Dx = (1/dx**2)*(-2*Ik + np.eye(K,k=1) + np.eye(K,k=K-1) + np.eye(K,k=-1) + np.eye(K,k=-K+1))
     ID = np.linalg.inv(Ik-0.5*dt**2*Dx)
 
-    WantToCheck = False
-    if WantToCheck:
-        ts = [0]
-        dR,dI,dN = [0],[0],[0]
-
     while ri_t < M or n_t < M:
         #print(ri_t,n_t,M)
         if ri_t < n_t: # Nm,N(m+1),Em から E(m+1)を求める
@@ -237,12 +245,6 @@ def Glassey(Param,K,M):
             ri_t += 1
             if ri_t%10 == 0:
                 print(ri_t,n_t,M) #実行の進捗の目安として
-            if WantToCheck:
-                ts.append(ri_t)
-                tR,tI,tN = analytical_solutions(Param,ri_t*dt,K)
-                dR.append(max([abs(R_now[k]-tR[k]) for k in range(K)]))
-                dI.append(max([abs(I_now[k]-tI[k]) for k in range(K)]))
-                dN.append(max([abs(N_next[k]-tN[k]) for k in range(K)]))
         else: # N(m-1),Nm,Em から N(m+1)を求める
             N_before = N_now; N_now = N_next
             E = np.array([R_now[k]**2 + I_now[k]**2 for k in range(K)])
@@ -279,13 +281,7 @@ def Glassey(Param,K,M):
             plt.ylabel("errors of Norm and Energy")
             plt.legend()
             plt.show()
-    if WantToCheck:
-        fig = plt.figure()
-        ax1 = fig.add_subplot(1, 3, 1); ax2 = fig.add_subplot(1, 3, 2); ax3 = fig.add_subplot(1, 3, 3)
-        l1,l2,l3 = "dR","dI","dN"
-        ax1.plot(ts, dR, label=l1); ax2.plot(ts, dI, label=l2); ax3.plot(ts, dN, label=l3)
-        ax1.legend(); ax2.legend(); ax3.legend()
-        plt.show()
+
     return [[str(end-start)]+[0 for i in range(len(Rs[0])-1)]],Rs,Is,Ns
 
 def checking_Glassey(Param,K,M):
@@ -321,8 +317,6 @@ def DVDM_Glassey(Param,K,M,eps):
     R_now,I_now,N_now,N_next,V_now = initial_condition(Param,K,M)[:-1]
     Rs.append(R_now); Is.append(I_now); Ns.append(N_now); Vs.append(V_now)
 
-    tR,tI,tN = analytical_solutions(Param,0,K)
-
     m = 0
 
     Ik = np.identity(K); Zk = np.zeros((K,K))
@@ -330,11 +324,6 @@ def DVDM_Glassey(Param,K,M,eps):
     ID = np.linalg.inv(Ik-0.5*dt**2*Dx)
 
     DR_now = np.dot(Dx,np.array(R_now)); DI_now = np.dot(Dx,np.array(I_now)); DV_now = np.dot(Dx,np.array(V_now))
-
-    WantToCheck = False
-    if WantToCheck:
-        ts = [0]
-        RR,II,NN = [0],[0],[0]
 
     while m*dt < T:
         t = 0
@@ -387,12 +376,7 @@ def DVDM_Glassey(Param,K,M,eps):
         m += 1
         if m%10 == 0:
             print("時刻:",m,"終点:",M)
-        if WantToCheck:
-            ts.append(m)
-            tR,tI,tN = analytical_solutions(Param,m*dt,K)
-            RR.append(max([abs(R_now[k]-tR[k]) for k in range(K)]))
-            II.append(max([abs(I_now[k]-tI[k]) for k in range(K)]))
-            NN.append(max([abs(N_next[k]-tN[k]) for k in range(K)]))
+
     end = time.perf_counter()
     print("DVDM実行時間:",end-start)
 
@@ -421,13 +405,6 @@ def DVDM_Glassey(Param,K,M,eps):
             plt.ylabel("errors of Norm and Energy")
             plt.legend()
             plt.show()
-    if WantToCheck:
-        fig = plt.figure()
-        ax1 = fig.add_subplot(1, 3, 1); ax2 = fig.add_subplot(1, 3, 2); ax3 = fig.add_subplot(1, 3, 3)
-        l1,l2,l3 = "dR","dI","dN"
-        ax1.plot(ts, RR, label=l1); ax2.plot(ts, II, label=l2); ax3.plot(ts, NN, label=l3)
-        ax1.legend(); ax2.legend(); ax3.legend()
-        plt.show()
     return [[str(end-start)]+[0 for i in range(len(Rs[0])-1)]],Rs,Is,Ns,Vs
 
 def checking_DVDM(Param,K,M,eps):
@@ -453,10 +430,41 @@ def checking_DVDM(Param,K,M,eps):
     return (dx**2 + dt**2)**0.5,eEs,eNs
 
 # Glassey,DVDM,解析解を T/3 ごとに比較
-def comparing(Param,K,M,eps):
+def comparing(L,Emax,n,eps):
+    v, Emin, q, N_0, u = parameters(L,1,Emax,eps)
+    T = L/v; phi = v/2
+    Param = [L,Emax,v,Emin,q,N_0,u,T,phi]
+    K = math.floor(L*n); M = math.floor(T*n)
     dx = L/K; dt = T/M
-    RG,IG,NG = Glassey(Param,K,M)[1:]
-    RD,ID,ND = DVDM_Glassey(Param,K,M,eps)[1:4]
+    RG,IG,NG = [],[],[]
+    RD,ID,ND = [],[],[]
+
+    fname = "L="+str(L)+"Emax="+str(Emax)+"N="+str(n)+"Glassey.csv"
+    if not os.path.isfile(fname):
+        time,Rs,Is,Ns = Glassey(Param,K,M)
+        pd.DataFrame(time+Rs+Is+Ns).to_csv(fname)
+    with open(fname) as f:
+        for row in csv.reader(f, quoting=csv.QUOTE_NONNUMERIC):
+            if row[0] in [M//3+1,2*M//3+1,3*M//3+1]:
+                RG.append(np.array(row[1:]))
+            if row[0] in [M+2+M//3,M+2+2*M//3,M+2+3*M//3]:
+                IG.append(np.array(row[1:]))
+            if row[0] in [2*M+3+M//3,2*M+3+2*M//3,2*M+3+3*M//3]:
+                NG.append(np.array(row[1:]))
+
+    fname = "L="+str(L)+"Emax="+str(Emax)+"N="+str(n)+"DVDM.csv"
+    if not os.path.isfile(fname):
+        time,Rs,Ns,Is,Vs = DVDM_Glassey(Param,K,M,eps)
+        pd.DataFrame(time+Rs+Ns+Is+Vs).to_csv(fname)
+    with open(fname) as f:
+        for row in csv.reader(f, quoting=csv.QUOTE_NONNUMERIC):
+            if row[0] in [M//3+1,2*M//3+1,3*M//3+1]:
+                RD.append(np.array(row[1:]))
+            if row[0] in [M+2+M//3,M+2+2*M//3,M+2+3*M//3]:
+                ID.append(np.array(row[1:]))
+            if row[0] in [2*M+3+M//3,2*M+2+2*M//3,2*M+3+3*M//3]:
+                ND.append(np.array(row[1:]))
+
     x = np.linspace(0, L, K)
 
     fig = plt.figure()
@@ -473,20 +481,20 @@ def comparing(Param,K,M,eps):
         ax = axs[3*i:3*i+3]
 
         l1,l2,l3 = "Glassey","DVDM","analytical"
-        ax[0].plot(x, RG[t], label=l1)
-        ax[0].plot(x, RD[t], label=l2)
-        ax[0].plot(x, tR, label=l3)
-        ax[1].plot(x, IG[t], label=l1)
-        ax[1].plot(x, ID[t], label=l2)
-        ax[1].plot(x, tI, label=l3)
-        ax[2].plot(x, NG[t], label=l1)
-        ax[2].plot(x, ND[t], label=l2)
-        ax[2].plot(x, tN, label=l3)
+        ax[0].plot(x, RG[i], label=l1+",ReE")
+        ax[0].plot(x, RD[i], label=l2+",ReE")
+        ax[0].plot(x, tR, label=l3+",ReE")
+        ax[1].plot(x, IG[i], label=l1+",ImE")
+        ax[1].plot(x, ID[i], label=l2+",ImE")
+        ax[1].plot(x, tI, label=l3+",ImE")
+        ax[2].plot(x, NG[i], label=l1+",N")
+        ax[2].plot(x, ND[i], label=l2+",N")
+        ax[2].plot(x, tN, label=l3+",N")
         ax[0].legend(); ax[1].legend(); ax[2].legend()
     plt.show()
 
 
-N = 5
+N = 100
 K = math.floor(L*N)
 M = math.floor(T*N)
 
@@ -497,7 +505,8 @@ M = math.floor(T*N)
 #DVDM_Glassey(Param,K,M,10**(-5))
 #print(checking_DVDM(Param,K,M,10**(-5)))
 #print(checking_DVDM(Param,K,M,10**(-8)))
-#comparing(Param,K,M,10**(-8))
+#comparing(20,1,20,10**(-8))
+initial_condition(Param,K,M)
 
 ###############################################################################
 #収束先の検証

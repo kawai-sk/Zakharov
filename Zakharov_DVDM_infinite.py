@@ -100,6 +100,20 @@ def initial_condition_infinite(Param2,K,M):
     dR0 = CD(R0,dx); d2R0 = SCD(R0,dx)
     dI0 = CD(I0,dx); d2I0 = SCD(I0,dx)
     N1 = [N0[k] + dt*Nt0[k] + dt**2*(0.5*d2N0[k] + dR0[k]**2 + dI0[k]**2 + R0[k]*d2R0[k] + I0[k]*d2I0[k]) for k in range(len(R0))]
+
+    WantToCompare = True
+    if WantToCompare:
+        K0 = len(Nt0)
+        DD = -2*np.eye(K0-1,k=0) + np.eye(K0-1,k=1) + np.eye(K0-1,k=-1)
+        DDI = np.linalg.inv(DD)
+
+        dN = [Nt0[k] for k in range(1,K0)]
+        V = dx**2 * np.dot(DDI,dN)
+        V = [0]+[V[i] for i in range(K0-1)]
+        V0 = [V0[i] - V0[0] for i in range(K0)]
+        print(dist(V,V0,dx))
+        print(dist(Nt0,SCD(V,dx),dx))
+        print(dist(Nt0,SCD(V0,dx),dx))
     return R0,I0,N0,N1,V0,dV0
 
 ###############################################################################
@@ -345,8 +359,8 @@ def comparing(Ltent,Emax,N,eps):
 
     fname = "L="+str(Ltent)+"Emax="+str(Emax)+"N="+str(N)+"Glasseyinf.csv"
     if not os.path.isfile(fname):
-        time,Rs,Ns,Is = Glassey_infinite(Param2,K,M)
-        pd.DataFrame(time+Rs+Ns+Is).to_csv(fname)
+        time,Rs,Is,Ns = Glassey_infinite(Param2,K,M)
+        pd.DataFrame(time+Rs+Is+Ns).to_csv(fname)
     with open(fname) as f:
         for row in csv.reader(f, quoting=csv.QUOTE_NONNUMERIC):
             if row[0] in [M//3+1,2*M//3+1,3*M//3+1]:
@@ -358,8 +372,8 @@ def comparing(Ltent,Emax,N,eps):
 
     fname = "L="+str(Ltent)+"Emax="+str(Emax)+"N="+str(N)+"DVDMinf.csv"
     if not os.path.isfile(fname):
-        time,Rs,Ns,Is = DVDM_Glassey_infinite(Param2,K,M,eps)[:4]
-        pd.DataFrame(time+Rs+Ns+Is).to_csv(fname)
+        time,Rs,Is,Ns = DVDM_Glassey_infinite(Param2,K,M,eps)[:4]
+        pd.DataFrame(time+Rs+Is+Ns).to_csv(fname)
     with open(fname) as f:
         for row in csv.reader(f, quoting=csv.QUOTE_NONNUMERIC):
             if row[0] in [M//3+1,2*M//3+1,3*M//3+1]:
@@ -414,6 +428,7 @@ M = math.floor(T*N)
 #print(checking_DVDM(Param,K,M,10**(-8)))
 #comparing(20,1,10,10**(-8))
 #comparing(20,2.1,20,10**(-8))
+initial_condition_infinite(Param2,K,M)
 
 def ploting_DVDM(Ltent,Emax,N,eps,times):
     m = 1; v = 4*math.pi*m/Ltent; u = v/2 - Emax**2/(v*(1-v**2))
