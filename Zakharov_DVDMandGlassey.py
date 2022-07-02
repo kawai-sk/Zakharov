@@ -103,10 +103,10 @@ def analytical_solutions(Param,t,K):
     I = [F[k]*math.sin(phi*(k*dx-u*t)) for k in range(len(W))]
     N = [-F[k]**2/vv2 + N_0 for k in range(len(W))]
     Nt0 = [float(coef1*sn[k]*dn[k]*ellipfun('cn',W[k],q*q)) for k in range(K)]
-    V = [coef2*float(ellipe(sn[k],q*q)) for k in range(len(W))]
+    #V = [coef2*float(ellipe(sn[k],q*q)) for k in range(len(W))]
     dV = [coef3*dn[k]**2 for k in range(len(W))]
 
-    return R,I,N,Nt0,V,dV
+    return R,I,N,Nt0,dV
 
 def analytical_solutions2(Param,t,K):
     L,Emax,v,Emin,q,N_0,u,T,phi = Param
@@ -120,20 +120,6 @@ def analytical_solutions2(Param,t,K):
     N = [-F[k]**2/vv2 + N_0 for k in range(len(W))]
 
     return E,N
-
-def checking_analycal(n,m):
-    Emaxs = [0.18 + (1.3-0.18)*i/m for i in range(m+1)]
-    Errors = []
-    L = 20; m = 1; eps = 10**(-9)
-    for Emax in Emaxs:
-        v, Emin, q, N_0, u = parameters(L,1,Emax,eps)
-        T = L/v; phi = v/2
-        Param = [L,Emax,v,Emin,q,N_0,u,T,phi]
-        K = math.floor(L*n); M = math.floor(T*n)
-        dt = T/M; dx = L/K
-        analytical_solutions(Param,T/2,K)
-
-#checking_analycal(1,10)
 
 ###############################################################################
 #初期条件
@@ -187,25 +173,20 @@ def initial_condition(Param,K,M):
     L,Emax,v,Emin,q,N_0,u,T,phi = Param
     dx = L/K; dt = T/M
 
-    R0,I0,N0,Nt0,V0,dV0 = analytical_solutions(Param,0,K)
+    R0,I0,N0,Nt0,dV0 = analytical_solutions(Param,0,K)
 
     d2N0 = SCD(N0,dx)
     dR0 = CD(R0,dx); d2R0 = SCD(R0,dx)
     dI0 = CD(I0,dx); d2I0 = SCD(I0,dx)
     N1 = [N0[k] + dt*Nt0[k] + dt**2*(0.5*d2N0[k] + dR0[k]**2 + dI0[k]**2 + R0[k]*d2R0[k] + I0[k]*d2I0[k]) for k in range(K)]
 
-    WantToCompare = True
-    if WantToCompare:
-        DD = -2*np.eye(K-1,k=0) + np.eye(K-1,k=1) + np.eye(K-1,k=-1)
-        DDI = np.linalg.inv(DD)
+    DD = -2*np.eye(K-1,k=0) + np.eye(K-1,k=1) + np.eye(K-1,k=-1)
+    DDI = np.linalg.inv(DD)
 
-        dN = [Nt0[k] for k in range(1,K)]
-        V = dx**2 * np.dot(DDI,dN)
-        V = [0]+[V[i] for i in range(K-1)]
-        V0 = [V0[i] - V0[0] for i in range(K)]
-        print(dist(V,V0,dx))
-        print(dist(Nt0,SCD(V,dx),dx))
-        print(dist(Nt0,SCD(V0,dx),dx))
+    dN = [(N1[k]-N0[k])/dt for k in range(1,K)]
+    V0 = dx**2 * np.dot(DDI,dN)
+    V0 = [0]+[V0[i] for i in range(K-1)]
+    #V0 = [V0[i] - V0[0] for i in range(K)]; print(dist(V,V0,dx)); print(dist(Nt0,SCD(V,dx),dx)); print(dist(Nt0,SCD(V0,dx),dx))
 
     return R0,I0,N0,N1,V0,dV0
 
@@ -494,7 +475,7 @@ def comparing(L,Emax,n,eps):
     plt.show()
 
 
-N = 100
+N = 10
 K = math.floor(L*N)
 M = math.floor(T*N)
 
@@ -505,8 +486,8 @@ M = math.floor(T*N)
 #DVDM_Glassey(Param,K,M,10**(-5))
 #print(checking_DVDM(Param,K,M,10**(-5)))
 #print(checking_DVDM(Param,K,M,10**(-8)))
-#comparing(20,1,20,10**(-8))
-initial_condition(Param,K,M)
+comparing(20,2.1,10,10**(-8))
+#initial_condition(Param,K,M)
 
 ###############################################################################
 #収束先の検証
