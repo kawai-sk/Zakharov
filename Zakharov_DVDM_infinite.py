@@ -22,24 +22,17 @@ Param2 = [Ltent,T,Emax,v,u,phi]
 
 ###############################################################################
 
-def analytical_solutions_infinite(Param,t,K):
+def analytical_solutions_infinite(Param2,t,K,a):
     Ltent,T,Emax,v,u,phi = Param2
     dx = Ltent/K
     vv = (1 - v*v)**0.5; vv2 = 1 - v*v; WW = Emax/(2**0.5*vv)
     coef1 = 2**0.5*v*Emax/vv; coef2 = Emax**2*v/vv2; coef3 = -2**0.5*Emax**3*v/vv*3
-    RangeType = 2
-    if RangeType == 1:
-        W = np.array([WW*((k-K)*dx-v*t) for k in range(3*K)])
-        F = Emax/np.cosh(W)
 
-        R = [F[k]*math.cos(phi*((k-K)*dx-u*t)) for k in range(len(W))]
-        I = [F[k]*math.sin(phi*((k-K)*dx-u*t)) for k in range(len(W))]
-    if RangeType == 2:
-        W = np.array([WW*((k-2*K)*dx-v*t) for k in range(5*K)])
-        F = Emax/np.cosh(W)
+    W = np.array([WW*((k-a*K)*dx-v*t) for k in range((2*a+1)*K)])
+    F = Emax/np.cosh(W)
 
-        R = [F[k]*math.cos(phi*((k-2*K)*dx-u*t)) for k in range(len(W))]
-        I = [F[k]*math.sin(phi*((k-2*K)*dx-u*t)) for k in range(len(W))]
+    R = [F[k]*math.cos(phi*((k-a*K)*dx-u*t)) for k in range(len(W))]
+    I = [F[k]*math.sin(phi*((k-a*K)*dx-u*t)) for k in range(len(W))]
     N = [-F[k]**2/vv2 for k in range(len(W))]
     Nt = [coef3*np.sinh(W[k])/np.cosh(W[k])**3 for k in range(len(W))]
     V = [coef1*np.tanh(W[k]) for k in range(len(W))]
@@ -90,18 +83,18 @@ def energy_DVDM(R,I,N,V,dx):
     return Energy
 
 #Taylorで R,I,N の m=1 を求める
-def initial_condition_infinite(Param2,K,M):
+def initial_condition_infinite(Param2,K,M,a):
     Ltent,T = Param2[:2]
     dx = Ltent/K; dt = T/M
 
-    R0,I0,N0,Nt0,V0,dV0 = analytical_solutions_infinite(Param2,0,K)
+    R0,I0,N0,Nt0,V0,dV0 = analytical_solutions_infinite(Param2,0,K,a)
 
     d2N0 = SCD(N0,dx)
     dR0 = CD(R0,dx); d2R0 = SCD(R0,dx)
     dI0 = CD(I0,dx); d2I0 = SCD(I0,dx)
     N1 = [N0[k] + dt*Nt0[k] + dt**2*(0.5*d2N0[k] + dR0[k]**2 + dI0[k]**2 + R0[k]*d2R0[k] + I0[k]*d2I0[k]) for k in range(len(R0))]
 
-    WantToCompare = True
+    WantToCompare = False
     if WantToCompare:
         K0 = len(Nt0)
         DD = -2*np.eye(K0-1,k=0) + np.eye(K0-1,k=1) + np.eye(K0-1,k=-1)
@@ -119,28 +112,23 @@ def initial_condition_infinite(Param2,K,M):
 ###############################################################################
 #解析解の描画
 
-def ploting_initial_solutions_infinite(Param2,K):
+def ploting_initial_solutions_infinite(Param2,K,a):
     Ltent = Param2[0]
-    R0,I0,N0 = analytical_solutions_infinite(Param2,0,K)[:3]
+    R0,I0,N0 = analytical_solutions_infinite(Param2,0,K,a)[:3]
     E0 = [(R0[k]**2 + I0[k]**2)**0.5 for k in range(len(R0))]
 
     fig = plt.figure()
     ax1 = fig.add_subplot(2, 2, 1); ax2 = fig.add_subplot(2, 2, 2)
     ax3 = fig.add_subplot(2, 2, 3); ax4 = fig.add_subplot(2, 2, 4)
 
-    RangeType = 2
-
-    if RangeType == 1:
-        x = np.linspace(-Ltent, 2*Ltent, 3*K)
-    if RangeType == 2:
-        x = np.linspace(0, 5*Ltent, 5*K)
+    x = np.linspace(-a*Ltent, (a+1)*Ltent, (2*a+1)*K)
     l1,l2,l3,l4 = "Real Part of E","Imaginary Part of E","|E|","N"
 
     ax1.plot(x, R0, label=l1); ax2.plot(x, I0, label=l2); ax3.plot(x, E0, label=l3); ax4.plot(x, N0, label=l4)
     ax1.legend(); ax2.legend(); ax3.legend(); ax4.legend()
     plt.show()
 
-def checking_invariants(n):
+def checking_invariants(n,a):
     Emaxs = [0.18,1,2.1]
     #Emaxs = [0.18 + (1.3-0.18)*i/m for i in range(m+1)]
     Errors = []
@@ -160,7 +148,7 @@ def checking_invariants(n):
 
         for i in range(M+1):
             time.append(i*dt)
-            R,I,N,_,_,dV = analytical_solutions_infiniteV(Param2,i*dt,K)
+            R,I,N,_,_,dV = analytical_solutions_infinite(Param2,i*dt,K,a)
             Norms.append(norm(R,dx) + norm(I,dx))
             Energys.append(energy(R,I,N,dV,dx))
 
@@ -172,20 +160,20 @@ def checking_invariants(n):
     plt.ylabel("Invariants")
     plt.show()
 
-#checking_invariants(10)
-#ploting_initial_solutions_infinite(Param2,math.floor(Ltent*10))
+#checking_invariants(10m1)
+#ploting_initial_solutions_infinite(Param2,math.floor(Ltent*10),1)
 ###############################################################################
 #スキーム本体
 
 # Glassey スキーム
-def Glassey_infinite(Param2,K,M):
+def Glassey_infinite(Param2,K,M,a):
     Ltent,T = Param2[:2]
     dx = Ltent/K; dt = T/M #print(dt,dx)
     start = time.perf_counter()
 
     # 数値解の記録
     Rs = []; Is = []; Ns = []
-    R_now,I_now,N_now,N_next = initial_condition_infinite(Param2,K,M)[:4]
+    R_now,I_now,N_now,N_next = initial_condition_infinite(Param2,K,M,a)[:4]
     Rs.append(R_now); Is.append(I_now); Ns.append(N_now); Ns.append(N_next)
     K0 = len(R_now)
 
@@ -224,17 +212,17 @@ def Glassey_infinite(Param2,K,M):
 
     return [[str(end-start)]+[0 for i in range(len(Rs[0])-1)]],Rs,Is,Ns
 
-def checking_Glassey_infinite(Param2,K,M):
+def checking_Glassey_infinite(Param2,K,M,a):
     Ltent,T = Param2[:2]
     dx = Ltent/K; dt = T/M #print(dt,dx)
-    Rs,Is,Ns = Glassey_infinite(Param,K,M)[1:]
+    Rs,Is,Ns = Glassey_infinite(Param,K,M,a)[1:]
     eEs = [];eNs = []
     rEs = [];rNs = []
 
     RANGE = [i for i in range(len(Rs))]
     #RANGE = [len(Rs)-1] # 最終時刻での誤差だけ知りたいとき
     for i in RANGE:
-        tR,tI,tN = analytical_solutions_infinite(Param,i*dt,K)[:3]
+        tR,tI,tN = analytical_solutions_infinite(Param,i*dt,K,a)[:3]
 
         tnorm = (norm(tR,dx) + norm(tI,dx))**0.5
 
@@ -249,14 +237,14 @@ def checking_Glassey_infinite(Param2,K,M):
 
 # DVDMスキーム本体
 # Newton法の初期値をGlasseyで求める
-def DVDM_Glassey_infinite(Param2,K,M,eps):
+def DVDM_Glassey_infinite(Param2,K,M,a,eps):
     Ltent,T = Param2[:2]
     start = time.perf_counter()
     dx = Ltent/K; dt = T/M; #print(dt,dx)
 
     # 数値解の記録
     Rs = []; Is = []; Ns = []; Vs = []
-    R_now,I_now,N_now,N_next,V_now = initial_condition_infinite(Param2,K,M)[:-1]
+    R_now,I_now,N_now,N_next,V_now = initial_condition_infinite(Param2,K,M,a)[:-1]
     Rs.append(R_now); Is.append(I_now); Ns.append(N_now); Vs.append(V_now)
     K0 = len(R_now)
     m = 0
@@ -323,17 +311,17 @@ def DVDM_Glassey_infinite(Param2,K,M,eps):
 
     return [[str(end-start)]+[0 for i in range(len(Rs[0])-1)]],Rs,Is,Ns,Vs
 
-def checking_DVDM(Param2,K,M,eps):
+def checking_DVDM(Param2,K,M,a,eps):
     Ltent,T = Param2[:2]
     dx = Ltent/K; dt = T/M #print(dt,dx)
-    Rs,Is,Ns = DVDM_Glassey_infinite(Param2,K,M,eps)[1:]
+    Rs,Is,Ns = DVDM_Glassey_infinite(Param2,K,M,a,eps)[1:]
     eEs = []; eNs = []
     rEs = []; rNs = []
 
     RANGE = [i for i in range(len(Rs))]
     #RANGE = [len(Rs)-1] # 最終時刻での誤差だけ知りたいとき
     for i in RANGE:
-        tR,tI,tN = analytical_solutions_infinite(Param,i*dt,K)[:3]
+        tR,tI,tN = analytical_solutions_infinite(Param,i*dt,K,a)[:3]
 
         tnorm = (norm(tR,dx) + norm(tI,dx))**0.5
 
@@ -347,7 +335,7 @@ def checking_DVDM(Param2,K,M,eps):
     return (dx**2 + dt**2)**0.5,eEs,eNs
 
 # Glassey,DVDM,解析解を T/3 ごとに比較
-def comparing(Ltent,Emax,N,eps):
+def comparing(Ltent,Emax,N,a,eps):
     m = 1; v = 4*math.pi*m/Ltent; u = v/2 - Emax**2/(v*(1-v**2))
     T = Ltent/v; phi = v/2
     Param2 = [Ltent,T,Emax,v,u,phi]
@@ -357,9 +345,9 @@ def comparing(Ltent,Emax,N,eps):
     RG,IG,NG = [],[],[]
     RD,ID,ND = [],[],[]
 
-    fname = "L="+str(Ltent)+"Emax="+str(Emax)+"N="+str(N)+"Glasseyinf.csv"
+    fname = "L="+str(Ltent)+"Emax="+str(Emax)+"N="+str(N)+"Glasseyinf"+str(a)+".csv"
     if not os.path.isfile(fname):
-        time,Rs,Is,Ns = Glassey_infinite(Param2,K,M)
+        time,Rs,Is,Ns = Glassey_infinite(Param2,K,M,a)
         pd.DataFrame(time+Rs+Is+Ns).to_csv(fname)
     with open(fname) as f:
         for row in csv.reader(f, quoting=csv.QUOTE_NONNUMERIC):
@@ -370,9 +358,9 @@ def comparing(Ltent,Emax,N,eps):
             if row[0] in [2*M+3+M//3,2*M+3+2*M//3,2*M+3+3*M//3]:
                 NG.append(np.array(row[1:]))
 
-    fname = "L="+str(Ltent)+"Emax="+str(Emax)+"N="+str(N)+"DVDMinf.csv"
+    fname = "L="+str(Ltent)+"Emax="+str(Emax)+"N="+str(N)+"DVDMinf"+str(a)+".csv"
     if not os.path.isfile(fname):
-        time,Rs,Is,Ns = DVDM_Glassey_infinite(Param2,K,M,eps)[:4]
+        time,Rs,Is,Ns = DVDM_Glassey_infinite(Param2,K,M,a,eps)[:4]
         pd.DataFrame(time+Rs+Is+Ns).to_csv(fname)
     with open(fname) as f:
         for row in csv.reader(f, quoting=csv.QUOTE_NONNUMERIC):
@@ -383,11 +371,7 @@ def comparing(Ltent,Emax,N,eps):
             if row[0] in [2*M+3+M//3,2*M+2+2*M//3,2*M+3+3*M//3]:
                 ND.append(np.array(row[1:]))
 
-    RangeType = 2
-    if RangeType == 1:
-        x = np.linspace(-Ltent, 2*Ltent, 3*K)
-    if RangeType == 2:
-        x = np.linspace(-2*Ltent, 3*Ltent, 5*K)
+    x = np.linspace(-a*Ltent, (a+1)*Ltent, (2*a+1)*K)
 
     fig = plt.figure()
     axs = []
@@ -397,7 +381,7 @@ def comparing(Ltent,Emax,N,eps):
         axs.append(fig.add_subplot(3, 3, 3*i+3))
 
     for i in range(3):
-        tR,tI,tN = analytical_solutions_infinite(Param2,((i+1)*M//3)*dt,K)[:3]
+        tR,tI,tN = analytical_solutions_infinite(Param2,((i+1)*M//3)*dt,K,a)[:3]
 
         ax = axs[3*i:3*i+3]
 
@@ -427,10 +411,10 @@ M = math.floor(T*N)
 #print(checking_DVDM(Param,K,M,10**(-5)))
 #print(checking_DVDM(Param,K,M,10**(-8)))
 #comparing(20,1,10,10**(-8))
-#comparing(20,2.1,20,10**(-8))
-initial_condition_infinite(Param2,K,M)
+comparing(20,1,10,3,10**(-8))
+#initial_condition_infinite(Param2,K,M,2)
 
-def ploting_DVDM(Ltent,Emax,N,eps,times):
+def ploting_DVDM(Ltent,Emax,N,a,eps,times):
     m = 1; v = 4*math.pi*m/Ltent; u = v/2 - Emax**2/(v*(1-v**2))
     T = Ltent/v; phi = v/2
     Param2 = [Ltent,T,Emax,v,u,phi]
@@ -439,9 +423,9 @@ def ploting_DVDM(Ltent,Emax,N,eps,times):
 
     RD,ID,ND = [],[],[]
 
-    fname = "L="+str(Ltent)+"Emax="+str(Emax)+"N="+str(N)+"DVDMinf.csv"
+    fname = "L="+str(Ltent)+"Emax="+str(Emax)+"N="+str(N)+"DVDMinf"+str(a)+".csv"
     if not os.path.isfile(fname):
-        time,Rs,Ns,Is = DVDM_Glassey_infinite(Param2,K,M,eps)[:4]
+        time,Rs,Ns,Is = DVDM_Glassey_infinite(Param2,K,M,a,eps)[:4]
         pd.DataFrame(time+Rs+Ns+Is).to_csv(fname)
     with open(fname) as f:
         for row in csv.reader(f, quoting=csv.QUOTE_NONNUMERIC):
@@ -453,11 +437,7 @@ def ploting_DVDM(Ltent,Emax,N,eps,times):
                 print(row[0])
                 ND.append(np.array(row[1:]))
 
-    RangeType = 2
-    if RangeType == 1:
-        x = np.linspace(-Ltent, 2*Ltent, 3*K)
-    if RangeType == 2:
-        x = np.linspace(0, 5*Ltent, 5*K)
+    x = np.linspace(-a*Ltent, (a+1)*Ltent, (2*a+1)*K)
 
     fig = plt.figure()
     ax1 = fig.add_subplot(1, 3, 1)
@@ -465,8 +445,6 @@ def ploting_DVDM(Ltent,Emax,N,eps,times):
     ax3 = fig.add_subplot(1, 3, 3)
 
     for i in range(times):
-        tR,tI,tN = analytical_solutions_infinite(Param2,(i*M//times)*dt,K)
-
         l = str(i*M//times)
         ax1.plot(x, RD[i], label=l)
         ax2.plot(x, ID[i], label=l)
@@ -474,4 +452,4 @@ def ploting_DVDM(Ltent,Emax,N,eps,times):
         ax1.legend(); ax2.legend(); ax3.legend()
     plt.show()
 
-#ploting_DVDM(20,2.1,5,10**(-8),10)
+#ploting_DVDM(20,2.1,5,2,10**(-8),10)

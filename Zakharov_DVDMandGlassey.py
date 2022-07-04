@@ -77,15 +77,15 @@ def parameters(L,m,Emax,eps):
     q = (Emax**2 - Emin**2)**0.5/Emax
     N_0 = 2*(2/(1-v**2))**0.5*float(ellipe(q**2))/L
     u = v/2 + 2*N_0/v - (Emax**2 + Emin**2)/(v*(1-v**2))
-    return v,Emin,q,N_0,u
+    T = L/v; phi = v/2
+    return [L,Emax,v,Emin,q,N_0,u,T,phi]
 
 # Emax < 0.17281841278823945 を目安に Emin > Emax の事故が起こる
 # Emax > 2.173403970708827 を目安に scipy.special.ellipk が機能しなくなる
 # Emax > 4/3 を目安に scipy.special.ellipj が厳密ではなくなる
 L = 20; Emax = 1; m = 1; eps = 10**(-9)
-v, Emin, q, N_0, u = parameters(L,1,Emax,eps)
-T = L/v; phi = v/2
-Param = [L,Emax,v,Emin,q,N_0,u,T,phi]
+Param = parameters(L,m,Emax,eps)
+T = Param[-2]
 
 ###############################################################################
 
@@ -107,19 +107,6 @@ def analytical_solutions(Param,t,K):
     dV = [coef3*dn[k]**2 for k in range(len(W))]
 
     return R,I,N,Nt0,dV
-
-def analytical_solutions2(Param,t,K):
-    L,Emax,v,Emin,q,N_0,u,T,phi = Param
-    dx = L/K
-    vv = (1 - v*v)**0.5; vv2 = 1 - v*v; WW = Emax/(2**0.5*vv)
-    W = [WW*(k*dx-v*t) for k in range(K)]
-    dn = [float(ellipfun('dn',W[k],q*q)) for k in range(len(W))]
-    F = [Emax*dn[k] for k in range(len(W))]
-
-    E = [F[k]*cmath.exp(phi*(k*dx-u*t)*1j) for k in range(len(W))]
-    N = [-F[k]**2/vv2 + N_0 for k in range(len(W))]
-
-    return E,N
 
 ###############################################################################
 #初期条件
@@ -189,6 +176,56 @@ def initial_condition(Param,K,M):
     #V0 = [V0[i] - V0[0] for i in range(K)]; print(dist(V,V0,dx)); print(dist(Nt0,SCD(V,dx),dx)); print(dist(Nt0,SCD(V0,dx),dx))
 
     return R0,I0,N0,N1,V0,dV0
+
+def initial_condition_solitons(Emax,K,M):
+    L,Emax,v,Emin,q,N_0,u,T,phi = parameters(20,1,Emax,10**(-8))
+    K0 = 8*K
+    Khalf = math.floor(0.5*K)
+    K1 = math.floor(3.5*K)
+    K2 = K1 + K
+    dt = T/M; dx = L/K
+
+    vv = (1 - v*v)**0.5; vv2 = 1 - v*v; WW = Emax/(2**0.5*vv); coef = -2**0.5*Emax**2*q**2*v/vv*3
+    W = [WW*(k*dx-10) for k in range(K)]
+    dn = [float(ellipfun('dn',W[k],q*q)) for k in range(K)]
+    F = [Emax*dn[k] for k in range(K)]
+
+    Rbase1 = [F[k]*math.cos(phi*(k*dx-10)) for k in range(K)]
+    Ibase1 = [F[k]*math.sin(phi*(k*dx-10)) for k in range(K)]
+    Rbase2 = [F[k]*math.cos(-phi*(k*dx-10)) for k in range(K)]
+    Ibase2 = [F[k]*math.sin(-phi*(k*dx-10)) for k in range(K)]
+
+    Nbase = [-F[k]**2/vv2 + N_0 for k in range(len(W))]
+    Ntbase1 = [float(coef*dn[k]*ellipfun('sn',W[k],q*q)*ellipfun('cn',W[k],q*q)) for k in range(K)]
+    Ntbase2 = [float(-coef*dn[k]*ellipfun('sn',W[k],q*q)*ellipfun('cn',W[k],q*q)) for k in range(K)]
+
+    d2N = SCD(Nbase,dx)
+    dR1 = CD(Rbase1,dx); d2R1 = SCD(Rbase1,dx)
+    dI1 = CD(Ibase1,dx); d2I1 = SCD(Ibase1,dx)
+    N1b1 = [Nbase[k] + dt*Ntbase1[k] + dt**2*(0.5*d2N[k] + dR1[k]**2 + dI1[k]**2 + Rbase1[k]*d2R1[k] + Ibase1[k]*d2I1[k]) for k in range(K)]
+
+    dR2 = CD(Rbase2,dx); d2R2 = SCD(Rbase2,dx)
+    dI2 = CD(Ibase2,dx); d2I2 = SCD(Ibase2,dx)
+    N1b2 = [Nbase[k] + dt*Ntbase2[k] + dt**2*(0.5*d2N[k] + dR2[k]**2 + dI2[k]**2 + Rbase2[k]*d2R2[k] + Ibase2[k]*d2I2[k]) for k in range(K)]
+
+    DD = -2*np.eye(K-1,k=0) + np.eye(K-1,k=1) + np.eye(K-1,k=-1)
+    DDI = np.linalg.inv(DD)
+
+    dN1 = [(N1b1[k]-Nbase[k])/dt for k in range(1,K)]
+    Vbase1 = dx**2 * np.dot(DDI,dN1)
+    Vbase1 = [0]+[Vbase1[i] for i in range(K-1)]
+
+    dN2 = [(N1b2[k]-Nbase[k])/dt for k in range(1,K)]
+    Vbase2 = dx**2 * np.dot(DDI,dN2)
+    Vbase2 = [0]+[Vbase2[i] for i in range(K-1)]
+
+    R0 = [0 for k in range(3*K)]+Rbase1+Rbase2+[0 for k in range(3*K)]
+    I0 = [0 for k in range(3*K)]+Ibase1+Ibase2+[0 for k in range(3*K)]
+    N0 = [N_0 for k in range(3*K)]+Nbase+Nbase+[N_0 for k in range(3*K)]
+    N1 = [N_0 for k in range(3*K)]+N1b1+N1b2+[N_0 for k in range(3*K)]
+    V0 = [0 for k in range(3*K)]+Vbase1+Vbase2+[0 for k in range(3*K)]
+
+    return R0,I0,N0,N1,V0
 
 ###############################################################################
 #スキーム本体
@@ -412,9 +449,8 @@ def checking_DVDM(Param,K,M,eps):
 
 # Glassey,DVDM,解析解を T/3 ごとに比較
 def comparing(L,Emax,n,eps):
-    v, Emin, q, N_0, u = parameters(L,1,Emax,eps)
-    T = L/v; phi = v/2
-    Param = [L,Emax,v,Emin,q,N_0,u,T,phi]
+    Param = parameters(L,1,Emax,eps)
+    T = Param[-2]
     K = math.floor(L*n); M = math.floor(T*n)
     dx = L/K; dt = T/M
     RG,IG,NG = [],[],[]
@@ -486,7 +522,7 @@ M = math.floor(T*N)
 #DVDM_Glassey(Param,K,M,10**(-5))
 #print(checking_DVDM(Param,K,M,10**(-5)))
 #print(checking_DVDM(Param,K,M,10**(-8)))
-comparing(20,2.1,10,10**(-8))
+#comparing(20,2.1,10,10**(-8))
 #initial_condition(Param,K,M)
 
 ###############################################################################
@@ -494,9 +530,8 @@ comparing(20,2.1,10,10**(-8))
 
 def comp_nsGlassey(L,Emax,N1,N2):
     m = 1; eps = 10**(-9)
-    v, Emin, q, N_0, u = parameters(L,1,Emax,eps)
-    T = L/v; phi = v/2
-    Param = [L,Emax,v,Emin,q,N_0,u,T,phi]
+    Param = parameters(L,m,Emax,eps)
+    T = Param[-2]
     Rf,If,Nf = [],[],[]
     numbers = [N1,N2]
     fnames = ["L="+str(L)+"Emax="+str(Emax)+"N="+str(numbers[i])+"Glassey.csv" for i in range(2)]
@@ -528,9 +563,8 @@ def comp_nsGlassey(L,Emax,N1,N2):
 
 def conv_nsGlassey(L,Emax,n):
     m = 1; eps = 10**(-9)
-    v, Emin, q, N_0, u = parameters(L,1,Emax,eps)
-    T = L/v; phi = v/2
-    Param = [L,Emax,v,Emin,q,N_0,u,T,phi]
+    Param = parameters(L,m,Emax,eps)
+    T = Param[-2]
     fname = "L="+str(L)+"Emax="+str(Emax)+"N="+str(n)+"Glassey.csv"
     K = math.floor(L*n); M = math.floor(T*n)
     if not os.path.isfile(fname):
@@ -552,9 +586,8 @@ def conv_nsGlassey(L,Emax,n):
 
 def comp_nsDVDM(L,Emax,N1,N2):
     m = 1; eps = 10**(-9)
-    v, Emin, q, N_0, u = parameters(L,1,Emax,eps)
-    T = L/v; phi = v/2
-    Param = [L,Emax,v,Emin,q,N_0,u,T,phi]
+    Param = parameters(L,m,Emax,eps)
+    T = Param[-2]
     Rf,If,Nf = [],[],[]
     numbers = [N1,N2]
     fnames = ["L="+str(L)+"Emax="+str(Emax)+"N="+str(numbers[i])+"DVDM.csv" for i in range(2)]
@@ -586,9 +619,8 @@ def comp_nsDVDM(L,Emax,N1,N2):
 
 def conv_nsDVDM(L,Emax,n):
     m = 1; eps = 10**(-9)
-    v, Emin, q, N_0, u = parameters(L,1,Emax,eps)
-    T = L/v; phi = v/2
-    Param = [L,Emax,v,Emin,q,N_0,u,T,phi]
+    Param = parameters(L,m,Emax,eps)
+    T = Param[-2]
     fname = "L="+str(L)+"Emax="+str(Emax)+"N="+str(n)+"DVDM.csv"
     K = math.floor(L*n); M = math.floor(T*n)
     if not os.path.isfile(fname):
@@ -612,3 +644,244 @@ def conv_nsDVDM(L,Emax,n):
 #print(conv_nsGlassey(20,1,30))
 #print(comp_nsDVDM(20,2.1,30,40))
 #print(conv_nsDVDM(20,1,30))
+
+###############################################################################
+#2ソリトン衝突
+
+def Glassey_solitons(Emax,n):
+    T = parameters(20,1,Emax,10**(-8))[-2]
+    start = time.perf_counter()
+    K = math.floor(L*n); M = math.floor(T*n)
+    dx = 20/K; dt = T/M #print(dt,dx)
+
+    # 数値解の記録
+    Rs = []; Is = []; Ns = []
+    R_now,I_now,N_now,N_next = initial_condition_solitons(Emax,K,M)[:4]
+    Rs.append(R_now); Is.append(I_now); Ns.append(N_now); Ns.append(N_next)
+
+    K = 8*K
+
+    # ここまでに数値解を計算した時刻
+    ri_t = 0
+    n_t = 1
+
+    # 各mで共通して使える行列
+    Ik = np.identity(K)
+    Dx = (1/dx**2)*(-2*Ik + np.eye(K,k=1) + np.eye(K,k=K-1) + np.eye(K,k=-1) + np.eye(K,k=-K+1))
+    ID = np.linalg.inv(Ik-0.5*dt**2*Dx)
+
+    while ri_t < M or n_t < M:
+        #print(ri_t,n_t,M)
+        if ri_t < n_t: # Nm,N(m+1),Em から E(m+1)を求める
+            Dn = np.diag([N_now[k]+N_next[k] for k in range(K)])
+            D = dt*(0.5*Dx - 0.25*Dn)
+            A = np.block([[Ik,D],[-D,Ik]])
+            b = np.linalg.solve(A,2*np.array([R_now[i] if i < K else I_now[i-K] for i in range(2*K)]))
+            R_next = -np.array(R_now) + b[:K]
+            I_next = -np.array(I_now) + b[K:]
+            Rs.append(R_next); Is.append(I_next)
+            R_now = R_next; I_now = I_next
+            ri_t += 1
+            if ri_t%10 == 0:
+                print(ri_t,n_t,M) #実行の進捗の目安として
+        else: # N(m-1),Nm,Em から N(m+1)を求める
+            N_before = N_now; N_now = N_next
+            E = np.array([R_now[k]**2 + I_now[k]**2 for k in range(K)])
+            NN = np.array(N_now) + E
+            N_next = np.dot(ID,2*NN) - np.array(N_before) - 2*E
+            Ns.append(N_next)
+            n_t += 1
+    end = time.perf_counter()
+    print("Glassey実行時間:",end-start)
+
+    WantToKnow = True #ノルム・エネルギーを知りたいとき
+    WantToPlot = False #ノルム・エネルギーを描画したいとき
+    if WantToKnow:
+        Norm = [norm(Rs[i],dx) + norm(Is[i],dx) for i in range(len(Rs))]
+        dNorm = [abs(Norm[i] - Norm[0]) for i in range(1,len(Rs))]
+        rNorm = [dNorm[i]/Norm[0] for i in range(len(Rs)-1)]
+
+        DD = -2*np.eye(K-1,k=0) + np.eye(K-1,k=1) + np.eye(K-1,k=-1)
+        DDI = np.linalg.inv(DD)
+        Energy = [energy_Glassey(Rs[i+1],Is[i+1],Ns[i],Ns[i+1],DDI,dt,dx) for i in range(len(Rs)-1)]
+        dEnergy = [abs(Energy[i] - Energy[0]) for i in range(len(Rs)-1)]
+        rEnergy = [dEnergy[i]/abs(Energy[0]) for i in range(len(Rs)-1)]
+
+        print("初期値に対するノルムの最大誤差:",max(dNorm))
+        print("初期値に対するノルムの最大誤差比:",max(rNorm))
+
+        print("初期値に対するエネルギーの最大誤差:",max(dEnergy))
+        print("初期値に対するエネルギーの最大誤差比:",max(rEnergy))
+        if WantToPlot:
+            Time = [i for i in range(1,len(Rs))]
+            plt.plot(Time,dNorm,label="Norm")
+            plt.plot(Time,dEnergy,label="Energy")
+            plt.xlabel("time")
+            plt.ylabel("errors of Norm and Energy")
+            plt.legend()
+            plt.show()
+
+    return [[str(end-start)]+[0 for i in range(len(Rs[0])-1)]],Rs,Is,Ns
+
+def DVDM_solitons(Emax,n):
+    T = parameters(20,1,Emax,10**(-8))[-2]
+    eps = 10**(-8)
+    start = time.perf_counter()
+    K = math.floor(L*n); M = math.floor(T*n)
+    dx = 20/K; dt = T/M #print(dt,dx)
+
+    # 数値解の記録
+    Rs = []; Is = []; Ns = []; Vs = []
+    R_now,I_now,N_now,N_next,V_now = initial_condition_solitons(Emax,K,M)
+    Rs.append(R_now); Is.append(I_now); Ns.append(N_now); Vs.append(V_now)
+
+    K = 8*K
+    m = 0
+
+    Ik = np.identity(K); Zk = np.zeros((K,K))
+    Dx = (-2*Ik + np.eye(K,k=1) + np.eye(K,k=K-1) + np.eye(K,k=-1) + np.eye(K,k=-K+1))/dx**2
+    ID = np.linalg.inv(Ik-0.5*dt**2*Dx)
+
+    DR_now = np.dot(Dx,np.array(R_now)); DI_now = np.dot(Dx,np.array(I_now)); DV_now = np.dot(Dx,np.array(V_now))
+
+    while m*dt < T:
+        t = 0
+        dN = 0.5*dt*Dx - 0.25*dt*np.diag(N_now)
+        dR_now = 0.25*dt*np.diag(R_now); dI_now = 0.25*dt*np.diag(I_now)
+
+        F0 = np.array([- R_now[i%K] + 0.5*dt*DI_now[i%K] if i//K == 0
+        else -I_now[i%K] - 0.5*dt*DR_now[i%K] if i//K == 1
+        else -N_now[i%K] - 0.5*dt*DV_now[i%K] if i//K == 2
+        else - V_now[i%K] - 0.5*dt*(N_now[i%K] + R_now[i%K]**2 + I_now[i%K]**2) for i in range(4*K)])
+
+        if m > 0:
+            E = np.array([R_now[k]**2 + I_now[k]**2 for k in range(K)])
+            N_next = 2*np.dot(ID,np.array(N_now) + E) - np.array(N_before) - 2*E
+        D = dt*(0.5*Dx - 0.25*np.diag([N_now[k]+N_next[k] for k in range(K)]))
+        A = np.block([[Ik,D],[-D,Ik]])
+        b = np.linalg.solve(A,2*np.array([R_now[i] if i < K else I_now[i-K] for i in range(2*K)]))
+        R_next = -np.array(R_now) + b[:K]; I_next = -np.array(I_now) + b[K:]
+
+        V_next = [-V_now[k]+ 0.5*dt*(N_next[k] + N_now[k] + R_now[k]**2 + R_next[k]**2 + I_now[k]**2 + I_next[k]**2) for k in range(K)]
+        DR_next = np.dot(Dx,np.array(R_next)); DI_next = np.dot(Dx,np.array(I_next)); DV_next = np.dot(Dx,np.array(V_next))
+
+        F = F0 + np.array([R_next[i%K] + 0.5*dt*DI_next[i%K] - 0.25*dt*(I_next[i%K] + I_now[i%K])*(N_next[i%K] + N_now[i%K]) if i//K == 0
+            else I_next[i%K] - 0.5*dt*DR_next[i%K] + 0.25*dt*(R_next[i%K] + R_now[i%K])*(N_next[i%K] + N_now[i%K]) if i//K == 1
+            else N_next[i%K] - 0.5*dt*DV_next[i%K] if i//K == 2
+            else V_next[i%K] - 0.5*dt*(N_next[i%K] + R_next[i%K]**2 + I_next[i%K]**2) for i in range(4*K)])
+        #print(m,"Start:",norm(F,dx)**0.5)
+
+        while norm(F,dx)**0.5 >= eps:
+            dNN = dN - 0.25*dt*np.diag(N_next)
+            dR = dt*np.diag(R_next); dI = dt*np.diag(I_next)
+            dRR = 0.25*dR + dR_now; dII = 0.25*dI + dI_now
+            DF = np.block([[Ik,dNN,-dII,Zk],[-dNN,Ik,dRR,Zk],[Zk,Zk,Ik,-0.5*dt*Dx],[-dR,-dI,-0.5*dt*Ik,Ik]])
+            r = np.linalg.solve(DF,F)
+
+            R_next -= r[:K]; I_next -= r[K:2*K]; N_next -= r[2*K:3*K]; V_next -= r[3*K:]
+            DR_next = np.dot(Dx,np.array(R_next)); DI_next = np.dot(Dx,np.array(I_next)); DV_next = np.dot(Dx,np.array(V_next))
+
+            F = F0 + np.array([R_next[i%K] + 0.5*dt*DI_next[i%K] - 0.25*dt*(I_next[i%K] + I_now[i%K])*(N_next[i%K] + N_now[i%K]) if i//K == 0
+                else I_next[i%K] - 0.5*dt*DR_next[i%K] + 0.25*dt*(R_next[i%K] + R_now[i%K])*(N_next[i%K] + N_now[i%K]) if i//K == 1
+                else N_next[i%K] - 0.5*dt*DV_next[i%K] if i//K == 2
+                else V_next[i%K] - 0.5*dt*(N_next[i%K] + R_next[i%K]**2 + I_next[i%K]**2) for i in range(4*K)])
+
+            t += 1
+            if t > 1000:
+                return "Failure"
+        Rs.append(R_next); Is.append(I_next); Ns.append(N_next); Vs.append(V_next)
+        R_now = R_next; I_now = I_next; N_before = N_now; N_now = N_next; V_now = V_next
+        DR_now = DR_next; DI_now = DI_next; DV_now = DV_next;
+        m += 1
+        if m%10 == 0:
+            print("時刻:",m,"終点:",M)
+
+    end = time.perf_counter()
+    print("DVDM実行時間:",end-start)
+
+    WantToKnow = True #ノルム・エネルギーを知りたいとき
+    WantToPlot = False #ノルム・エネルギーを描画したいとき
+    if WantToKnow:
+        Norm = [norm(Rs[i],dx) + norm(Is[i],dx) for i in range(len(Rs))]
+        dNorm = [abs(Norm[i] - Norm[0]) for i in range(len(Rs))]
+        rNorm = [dNorm[i]/Norm[0] for i in range(len(Rs))]
+
+        Energy = [energy_DVDM(Rs[i],Is[i],Ns[i],Vs[i],dx) for i in range(len(Rs))]
+        dEnergy = [abs(Energy[i] - Energy[0]) for i in range(len(Rs))]
+        rEnergy = [dEnergy[i]/abs(Energy[0]) for i in range(len(Rs))]
+
+        print("初期値に対するノルムの最大誤差:",max(dNorm))
+        print("初期値に対するノルムの最大誤差比:",max(rNorm))
+
+        print("初期値に対するエネルギーの最大誤差:",max(dEnergy))
+        print("初期値に対するエネルギーの最大誤差比:",max(rEnergy))
+
+        if WantToPlot:
+            Time = [i for i in range(len(Rs))]
+            plt.plot(Time,dNorm,label="Norm")
+            plt.plot(Time,dEnergy,label="Energy")
+            plt.xlabel("time")
+            plt.ylabel("errors of Norm and Energy")
+            plt.legend()
+            plt.show()
+
+    return [[str(end-start)]+[0 for i in range(len(Rs[0])-1)]],Rs,Is,Ns,Vs
+
+def comparing_solitons(Emax,n,times):
+    T = parameters(20,1,Emax,10**(-8))
+    T = Param[-2]
+    K = math.floor(20*n); M = math.floor(T*n)
+    dx = 20/K; dt = T/M
+
+    RG,IG,NG = [],[],[]
+    RD,ID,ND = [],[],[]
+
+    fname = "Emax="+str(Emax)+"N="+str(n)+"GlasseySolitons.csv"
+    if not os.path.isfile(fname):
+        time,Rs,Is,Ns = Glassey_solitons(Emax,n)
+        pd.DataFrame(time+Rs+Is+Ns).to_csv(fname)
+    with open(fname) as f:
+        for row in csv.reader(f, quoting=csv.QUOTE_NONNUMERIC):
+            if row[0] in [i*M//times+1 for i in range(times+1)]:
+                RG.append(np.array(row[1:]))
+            if row[0] in [M+2+i*M//times for i in range(times+1)]:
+                IG.append(np.array(row[1:]))
+            if row[0] in [2*M+3+i*M//times for i in range(times+1)]:
+                NG.append(np.array(row[1:]))
+
+    fname = "Emax="+str(Emax)+"N="+str(n)+"DVDMSolitons.csv"
+    if not os.path.isfile(fname):
+        time,Rs,Ns,Is,Vs = DVDM_solitons(Emax,n)
+        pd.DataFrame(time+Rs+Ns+Is+Vs).to_csv(fname)
+    with open(fname) as f:
+        for row in csv.reader(f, quoting=csv.QUOTE_NONNUMERIC):
+            if row[0] in [i*M//times+1 for i in range(times+1)]:
+                RD.append(np.array(row[1:]))
+            if row[0] in [M+2+i*M//times for i in range(times+1)]:
+                ID.append(np.array(row[1:]))
+            if row[0] in [2*M+3+i*M//times for i in range(times+1)]:
+                ND.append(np.array(row[1:]))
+
+    x = np.linspace(0, 160, 8*K)
+
+    fig = plt.figure()
+    axs = []
+    for i in range(times+1):
+        axs.append(fig.add_subplot(times+1, 2, 2*i+1))
+        axs.append(fig.add_subplot(times+1, 2, 2*i+2))
+
+    for i in range(times+1):
+        ax = axs[2*i:2*i+2]
+
+        EG = [(RG[i][k]**2 + IG[i][k]**2)**0.5 for k in range(8*K)]
+        ED = [(RD[i][k]**2 + ID[i][k]**2)**0.5 for k in range(8*K)]
+
+        ax[0].plot(x, EG, label="G")
+        ax[0].plot(x, ED, label="D")
+        ax[1].plot(x, NG[i], label="G")
+        ax[1].plot(x, ND[i], label="D")
+        ax[0].legend(); ax[1].legend()
+        ax[0].set_ylabel("|E|"); ax[1].set_ylabel("N")
+    plt.show()
+
+comparing_solitons(0.18,20,5)
