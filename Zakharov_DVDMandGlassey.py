@@ -866,22 +866,22 @@ def comparing_solitons(Emax,n,times):
 
     fig = plt.figure()
     axs = []
-    for i in range(times+1):
-        axs.append(fig.add_subplot(times+1, 2, 2*i+1))
-        axs.append(fig.add_subplot(times+1, 2, 2*i+2))
+    for i in range(times):
+        axs.append(fig.add_subplot(times, 3, 3*i+1))
+        axs.append(fig.add_subplot(times, 3, 3*i+2))
+        axs.append(fig.add_subplot(times, 3, 3*i+3))
 
-    for i in range(times+1):
-        ax = axs[2*i:2*i+2]
+    for i in range(1,times+1):
+        ax = axs[3*i-3:3*i]
 
-        EG = [(RG[i][k]**2 + IG[i][k]**2)**0.5 for k in range(8*K)]
-        ED = [(RD[i][k]**2 + ID[i][k]**2)**0.5 for k in range(8*K)]
-
-        ax[0].plot(x, EG, label="G")
-        ax[0].plot(x, ED, label="D")
-        ax[1].plot(x, NG[i], label="G")
-        ax[1].plot(x, ND[i], label="D")
-        ax[0].legend(); ax[1].legend()
-        ax[0].set_ylabel("|E|"); ax[1].set_ylabel("N")
+        ax[0].plot(x, RG[i], label="G")
+        ax[0].plot(x, RD[i], label="D")
+        ax[1].plot(x, IG[i], label="G")
+        ax[1].plot(x, ID[i], label="D")
+        ax[2].plot(x, NG[i], label="G")
+        ax[2].plot(x, ND[i], label="D")
+        ax[0].legend(); ax[1].legend(); ax[1].legend()
+        ax[0].set_ylabel("ReE"); ax[1].set_ylabel("ImE"); ax[2].set_ylabel("N")
     plt.show()
 
 comparing_solitons(0.18,20,5)
