@@ -11,6 +11,8 @@ import pandas as pd
 import csv
 from mpmath import *
 
+#無限区間と仮定する場合のファイル
+
 ###############################################################################
 #パラメータを定める
 
@@ -411,7 +413,7 @@ M = math.floor(T*N)
 #print(checking_DVDM(Param,K,M,10**(-5)))
 #print(checking_DVDM(Param,K,M,10**(-8)))
 #comparing(20,1,10,10**(-8))
-comparing(20,1,10,3,10**(-8))
+comparing(20,2.1,30,2,10**(-8))
 #initial_condition_infinite(Param2,K,M,2)
 
 def ploting_DVDM(Ltent,Emax,N,a,eps,times):

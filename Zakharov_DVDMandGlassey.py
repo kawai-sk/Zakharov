@@ -14,75 +14,72 @@ from mpmath import *
 ###############################################################################
 #パラメータを定めるための関数
 
-#Eminの探索：Kが普通に計算できる場合
+#qの探索：普通に計算できる場合
 def findingE1(L,m,Emax,eps):
     #計算に使う定数
     v = 4*math.pi*m/L; K = L*Emax*0.5/(2*(1-v**2))**0.5
 
-    #[0,Emax]内の二分探索
-    h = Emax; l = 0; Emin = (h+l)/2
-    q = (Emax**2 - Emin**2)**0.5/Emax
+    #[0,1]内の二分探索
+    h = 1; l = 0; q = (h+l)/2
     Kq = ellipk(q)
     while abs(Kq - K) >= eps:
         if Kq < K:
-            if h == Emin: #性能限界
+            if h == q: #性能限界
                 break
-            h = Emin
+            h = q
         else:
-            if l == Emin: #性能限界
+            if l == q: #性能限界
                 break
-            l = Emin
-        Emin = (h+l)/2
-        q = (Emax**2 - Emin**2)**0.5/Emax; Kq = ellipk(q)
+            l = q
+        q = (h+l)/2; Kq = ellipk(q)
     if abs(Kq - K) < eps: #停止条件を達成した場合
-        return Emin
+        return q
     else:
         return "Failure"
 
-#Eminの探索：Emin<<Emaxの場合
+#qの探索：qが1に近い場合
 def findingE2(L,m,Emax,eps):
     #計算に使う定数
     v = 4*math.pi*m/L; K = L*Emax*0.5/(2*(1-v**2))**0.5
 
     #10乗オーダーでの線形探索
-    i = 0; Emin = 10**(-i); Kq = scipy.special.ellipkm1((Emin)**2/(Emax**2*2))
+    i = 0; q2 = 10**(-i); Kq = scipy.special.ellipkm1(q2)
     while Kq < K:
-        i += 1; Emin = 10**(-i); Kq = scipy.special.ellipkm1((Emin)**2/(Emax**2*2))
+        i += 1; q2 = 10**(-i); Kq = scipy.special.ellipkm1(q2)
 
     #上の10乗オーダーのもとで，小数点以下の値を2乗オーダーで線形探索
     j = 1
     while abs(K - Kq) >= eps:
-        Enew = Emin + 2**(-j)*10**(-i)
-        if Emin == Enew: #性能限界
+        qnew = q2 + 2**(-j)*10**(-i)
+        if qnew == q2: #性能限界
             break
-        Kq2 = scipy.special.ellipkm1((Enew)**2/(Emax**2*2))
+        Kq2 = scipy.special.ellipkm1(qnew)
         if Kq2 >= K:
-            Emin = Enew; Kq = Kq2
+            q2 = qnew; Kq = Kq2
         else:
             j += 1
 
-    if abs(Kq2 - K) < eps:
-        return Emin
+    if abs(Kq - K) < eps:
+        return 1-q2
     else:
         return "Failure"
 
 #各パラメータの出力
 def parameters(L,m,Emax,eps):
     v = 4*math.pi*m/L
-    Emin = findingE1(L,m,Emax,eps)
-    if Emin == "Failure":
-        Emin = findingE2(L,m,Emax,eps)
-    if Emin == "Failure":
-        Emin = 0
-    q = (Emax**2 - Emin**2)**0.5/Emax
+    q = findingE1(L,m,Emax,eps)
+    if q == "Failure":
+        q = findingE2(L,m,Emax,eps)
+    if q == "Failure":
+        q = 1
     N_0 = 2*(2/(1-v**2))**0.5*float(ellipe(q**2))/L
-    u = v/2 + 2*N_0/v - (Emax**2 + Emin**2)/(v*(1-v**2))
+    u = v/2 + 2*N_0/v - (2-q*2)*Emax**2/(v*(1-v**2))
     T = L/v; phi = v/2
-    return [L,Emax,v,Emin,q,N_0,u,T,phi]
+    return [L,Emax,v,q,N_0,u,T,phi]
 
-# Emax < 0.17281841278823945 を目安に Emin > Emax の事故が起こる
-# Emax > 2.173403970708827 を目安に scipy.special.ellipk が機能しなくなる
-# Emax > 4/3 を目安に scipy.special.ellipj が厳密ではなくなる
+# Emax < 0.17281841279256 を目安に scipy.special.ellipk(q) が q=0 となり機能しなくなる
+# Emax > 2.173403970708827 を目安に scipy.special.ellipkm1(1-q) が q=1 となり機能しなくなる
+# Emax > 4/3 を目安に scipy.special.ellipk(q) が十分精度を確保できなくなる
 L = 20; Emax = 1; m = 1; eps = 10**(-9)
 Param = parameters(L,m,Emax,eps)
 T = Param[-2]
@@ -90,7 +87,7 @@ T = Param[-2]
 ###############################################################################
 
 def analytical_solutions(Param,t,K):
-    L,Emax,v,Emin,q,N_0,u,T,phi = Param
+    L,Emax,v,q,N_0,u,T,phi = Param
     dx = L/K
     vv = (1 - v*v)**0.5; vv2 = 1 - v*v; WW = Emax/(2**0.5*vv)
     coef1 = -2**0.5*Emax**2*q**2*v/vv*3; coef2 = 2**0.5*v*Emax/vv; coef3 = v*Emax**2/vv2
@@ -157,7 +154,7 @@ def dist(a,b,dx):
 
 #Taylorで R,I,N の m=1 を求める
 def initial_condition(Param,K,M):
-    L,Emax,v,Emin,q,N_0,u,T,phi = Param
+    L,Emax,v,q,N_0,u,T,phi = Param
     dx = L/K; dt = T/M
 
     R0,I0,N0,Nt0,dV0 = analytical_solutions(Param,0,K)
@@ -178,7 +175,7 @@ def initial_condition(Param,K,M):
     return R0,I0,N0,N1,V0,dV0
 
 def initial_condition_solitons(Emax,K,M):
-    L,Emax,v,Emin,q,N_0,u,T,phi = parameters(20,1,Emax,10**(-8))
+    L,Emax,v,q,N_0,u,T,phi = parameters(20,1,Emax,10**(-8))
     K0 = 8*K
     Khalf = math.floor(0.5*K)
     K1 = math.floor(3.5*K)
@@ -884,4 +881,4 @@ def comparing_solitons(Emax,n,times):
         ax[0].set_ylabel("ReE"); ax[1].set_ylabel("ImE"); ax[2].set_ylabel("N")
     plt.show()
 
-comparing_solitons(0.18,20,5)
+#comparing_solitons(0.18,20,5)
