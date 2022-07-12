@@ -13,7 +13,7 @@ from mpmath import *
 #パラメータを定めるための関数
 
 #qの探索
-def findingE1(L,m,Emax,eps):
+def finding(L,m,Emax,eps):
     #計算に使う定数
     v = 4*math.pi*m/L; K = L*Emax*0.5/(2*(1-v**2))**0.5
 
@@ -30,48 +30,13 @@ def findingE1(L,m,Emax,eps):
                 break
             h = q
         q = (h+l)/2; Kq = ellipk(q)
-    if abs(Kq - K) < eps: #停止条件を達成した場合
-        return q
-    else:
-        return "Failure"
-
-#qの探索：
-def findingE2(L,m,Emax,eps):
-    #計算に使う定数
-    v = 4*math.pi*m/L; K = L*Emax*0.5/(2*(1-v**2))**0.5
-
-    #10乗オーダーでの線形探索
-    i = 0; q2 = 10**(-i); Kq = scipy.special.ellipkm1(q2)
-    while Kq < K:
-        i += 1; q2 = 10**(-i); Kq = scipy.special.ellipkm1(q2)
-
-    #上の10乗オーダーのもとで，小数点以下の値を2乗オーダーで線形探索
-    j = 1
-    while abs(K - Kq) >= eps:
-        qnew = q2 + 2**(-j)*10**(-i)
-        if qnew == q2: #性能限界
-            break
-        Kq2 = scipy.special.ellipkm1(qnew)
-        if Kq2 >= K:
-            q2 = qnew; Kq = Kq2
-        else:
-            j += 1
-
-    if abs(Kq - K) < eps:
-        print(1-q2)
-        return 1-q2
-    else:
-        return "Failure"
+    return q
 
 #各パラメータの出力
 def parameters(L,m,Emax,eps):
     v = 4*math.pi*m/L
-    q = findingE1(L,m,Emax,eps)
-    if q == "Failure":
-        q = findingE2(L,m,Emax,eps)
-    if q == "Failure":
-        q = 1
-    N_0 = 2*(2/(1-v**2))**0.5*float(ellipe(q**2))/L
+    q = finding(L,m,Emax,eps)
+    N_0 = 2*(2/(1-v**2))**0.5*float(ellipe(q))/L
     u = v/2 + 2*N_0/v - (2-q*2)*Emax**2/(v*(1-v**2))
     T = L/v; phi = v/2
     return [L,Emax,v,q,N_0,u,T,phi]
@@ -89,35 +54,45 @@ def analytical_solutions(Param,t,K):
     L,Emax,v,q,N_0,u,T,phi = Param
     dx = L/K
     vv = (1 - v*v)**0.5; vv2 = 1 - v*v; WW = Emax/(2**0.5*vv)
-    coef1 = -2**0.5*Emax**2*q**2*v/vv*3; coef2 = 2**0.5*v*Emax/vv; coef3 = v*Emax**2/vv2
+    coef1 = -2**0.5*Emax**2*q*v/vv*3; coef2 = 2**0.5*v*Emax/vv; coef3 = v*Emax**2/vv2
     W = [WW*(k*dx-v*t) for k in range(K)]
-    sn = [float(ellipfun('sn',W[k],q*q)) for k in range(len(W))]
-    dn = [float(ellipfun('dn',W[k],q*q)) for k in range(len(W))]
+    sn = [float(ellipfun('sn',W[k],q)) for k in range(len(W))]
+    dn = [float(ellipfun('dn',W[k],q)) for k in range(len(W))]
 
     F = [Emax*dn[k] for k in range(len(W))]
 
     R = [F[k]*math.cos(phi*(k*dx-u*t)) for k in range(len(W))]
     I = [F[k]*math.sin(phi*(k*dx-u*t)) for k in range(len(W))]
     N = [-F[k]**2/vv2 + N_0 for k in range(len(W))]
-    Nt0 = [float(coef1*sn[k]*dn[k]*ellipfun('cn',W[k],q*q)) for k in range(K)]
-    #V = [coef2*float(ellipe(sn[k],q*q)) for k in range(len(W))]
+    Nt0 = [float(coef1*sn[k]*dn[k]*ellipfun('cn',W[k],q)) for k in range(K)]
+    #V = [coef2*float(ellipe(sn[k],q)) for k in range(len(W))]
     dV = [coef3*dn[k]**2 for k in range(len(W))]
 
     return R,I,N,Nt0,dV
 
-def checking_analycal(n,m):
-    Emaxs = [0.18 + (1.3-0.18)*i/m for i in range(m+1)]
-    Errors = []
+def checking_analycal(n):
+    Emaxs = [1,1.3,2.1]
+    L = 20
+    K = math.floor(L*n); dx = L/K
     L = 20; m = 1; eps = 10**(-9)
+    x = np.linspace(0, L, K)
     for Emax in Emaxs:
-        v, q, N_0, u = parameters(L,1,Emax,eps)
-        T = L/v; phi = v/2
-        Param = [L,Emax,v,q,N_0,u,T,phi]
-        K = math.floor(L*n); M = math.floor(T*n)
-        dt = T/M; dx = L/K
-        analytical_solutions(Param,T/2,K)
-
-#checking_analycal(1,10)
+        L,Emax,v,q,N_0,u,T,phi = parameters(20,1,Emax,eps)
+        T = Param[-2]
+        M = math.floor(T*n); dt = T/M
+        vv = (1 - v*v)**0.5; vv2 = 1 - v*v; WW = Emax/(2**0.5*vv)
+        W = [WW*(k*dx) for k in range(K)]
+        dn = [float(ellipfun('dn',W[k],q)) for k in range(len(W))]
+        #print(L,2*ellipk(q))
+        print(ellipfun('dn',0,q))
+        print(ellipfun('dn',2*ellipk(q),q))
+        print(ellipfun('dn',L*Emax/(2**0.5*vv),q))
+        plt.plot(x,dn,label="Emax="+str(Emax))
+        plt.legend()
+    plt.xlabel("x")
+    plt.ylabel("dn")
+    plt.show()
+#checking_analycal(100)
 
 ###############################################################################
 #初期条件
@@ -239,7 +214,7 @@ def ploting_solutions(Param,n):
     plt.show()
 
 def checking_invariants(n):
-    Emaxs = [1.3]
+    Emaxs = [2.1]
     #Emaxs = [0.18 + (1.3-0.18)*i/m for i in range(m+1)]
     Errors = []
     L = 20; m = 1; eps = 10**(-9)
@@ -281,8 +256,7 @@ def checking_norms(n):
     Errors = []
     L = 20; m = 1; eps = 10**(-9)
     for Emax in Emaxs:
-        Param = parameters(L,1,Emax,eps)
-        T = Param[-2]
+        L,Emax,v,q,N_0,u,T,phi = parameters(L,1,Emax,eps)
         K = math.floor(L*n); M = math.floor(T*n)
         dt = T/M; dx = L/K
 
@@ -294,9 +268,9 @@ def checking_norms(n):
             time.append(i/M)
             dx = L/K
             vv = (1 - v*v)**0.5; vv2 = 1 - v*v; WW = Emax/(2**0.5*vv)
-            print(Emax,WW,1-q,1-q*q)
+            print(Emax,WW,1-q,1-q)
             W = [WW*(k*dx-v*i*dt) for k in range(K)]
-            dn = [Emax**2*scipy.special.ellipj(W[k],q*q)[2] for k in range(len(W))]
+            dn = [Emax**2*scipy.special.ellipj(W[k],q)[2] for k in range(len(W))]
             Norm.append(norm(dn,dx))
         plt.plot(time,Norm,label="Emax="+str(Emax))
         plt.legend()
@@ -321,11 +295,65 @@ def checking_norms2(Emax,n):
         for i in range(0,M+1):
             print(i)
             W = [WW*(k*dx-v*i*dt) for k in range(K)]
-            dn = [Emax**2*scipy.special.ellipj(W[k],q*q)[2] for k in range(len(W))]
+            dn = [Emax**2*scipy.special.ellipj(W[k],q)[2] for k in range(len(W))]
             Norm.append(norm(dn,dx))
         plt.plot(time,Norm,label="K="+str(K))
     plt.xlabel("time")
     plt.ylabel("Norm")
+    plt.show()
+
+def checking_norms3(Emax,n):
+    L = 20; eps = 10**(-9)
+
+    L,Emax,v,q,N_0,u,T,phi = parameters(L,1,Emax,eps)
+    vv = (1 - v*v)**0.5; vv2 = 1 - v*v; WW = Emax/(2**0.5*vv)
+    T = L/v; phi = v/2
+    L = 20; m = 1; eps = 10**(-9)
+    M = math.floor(T*n); dt = T/M
+    time = [i*dt for i in range(0,M+1)]
+    K = math.floor(L*n); dx = L/K
+    Norm1 = []; Norm2 = []; Norm3 = []
+    for i in range(0,M+1):
+        print(i,M)
+        W = [WW*(k*dx-v*i*dt) for k in range(K)]
+        dn = [Emax**2*float(ellipfun('dn',W[k],q)) for k in range(len(W))]
+        n1 = 0; n2 = 0
+        for k in range(K):
+            if W[k] >= 0:
+                n1 += dn[k]**2*dx
+            else:
+                n2 += dn[k]**2*dx
+        Norm1.append(n1); Norm2.append(n2); Norm3.append(n1+n2)
+    plt.plot(time,Norm1,label="kΔx-mvΔt:positive")
+    plt.plot(time,Norm2,label="kΔx-mvΔt:negative")
+    plt.plot(time,Norm3,label="full")
+    plt.legend()
+    plt.xlabel("time")
+    plt.ylabel("Norm")
+    plt.show()
+
+def checking_norms4(Emax,n,times):
+    L = 20; eps = 10**(-9)
+
+    L,Emax,v,q,N_0,u,T,phi = parameters(L,1,Emax,eps)
+    vv = (1 - v*v)**0.5; vv2 = 1 - v*v; WW = Emax/(2**0.5*vv)
+    T = L/v; phi = v/2
+    L = 20; m = 1; eps = 10**(-9)
+    M = math.floor(T*n); dt = T/M
+    K = math.floor(L*n); dx = L/K
+    time = [i*dt*M/times for i in range(times+1)]
+    x = np.linspace(0, L, K)
+
+    for i in range(len(time)):
+        t = time[i]
+        W = [WW*(k*dx-v*t) for k in range(K)]
+        dn = [float(ellipfun('dn',W[k],q)) for k in range(len(W))]
+        if i == 0:
+            print(dn[0],dn[-K//50],K)
+        plt.plot(x,dn,label="t="+str(t))
+    plt.legend()
+    plt.xlabel("time")
+    plt.ylabel("dn")
     plt.show()
 
 def checking_energys(n):
@@ -358,6 +386,7 @@ def checking_energys(n):
     plt.show()
 #ploting_initial_solutions(Param,100)
 #checking_norms(1)
-checking_norms2(1.3,10)
+checking_norms3(1,20)
+#checking_norms4(2.1,20,4)
 #checking_energys(10)
 #checking_invariants(5)

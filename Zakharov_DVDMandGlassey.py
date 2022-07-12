@@ -15,63 +15,29 @@ from mpmath import *
 #パラメータを定めるための関数
 
 #qの探索：普通に計算できる場合
-def findingE1(L,m,Emax,eps):
+def finding(L,m,Emax,eps):
     #計算に使う定数
     v = 4*math.pi*m/L; K = L*Emax*0.5/(2*(1-v**2))**0.5
 
     #[0,1]内の二分探索
     h = 1; l = 0; q = (h+l)/2
-    Kq = ellipk(q)
+    Kq = ellipk(q*q)
     while abs(Kq - K) >= eps:
         if Kq < K:
-            if h == q: #性能限界
-                break
-            h = q
-        else:
             if l == q: #性能限界
                 break
             l = q
-        q = (h+l)/2; Kq = ellipk(q)
-    if abs(Kq - K) < eps: #停止条件を達成した場合
-        return q
-    else:
-        return "Failure"
-
-#qの探索：qが1に近い場合
-def findingE2(L,m,Emax,eps):
-    #計算に使う定数
-    v = 4*math.pi*m/L; K = L*Emax*0.5/(2*(1-v**2))**0.5
-
-    #10乗オーダーでの線形探索
-    i = 0; q2 = 10**(-i); Kq = scipy.special.ellipkm1(q2)
-    while Kq < K:
-        i += 1; q2 = 10**(-i); Kq = scipy.special.ellipkm1(q2)
-
-    #上の10乗オーダーのもとで，小数点以下の値を2乗オーダーで線形探索
-    j = 1
-    while abs(K - Kq) >= eps:
-        qnew = q2 + 2**(-j)*10**(-i)
-        if qnew == q2: #性能限界
-            break
-        Kq2 = scipy.special.ellipkm1(qnew)
-        if Kq2 >= K:
-            q2 = qnew; Kq = Kq2
         else:
-            j += 1
-
-    if abs(Kq - K) < eps:
-        return 1-q2
-    else:
-        return "Failure"
+            if h == q: #性能限界
+                break
+            h = q
+        q = (h+l)/2; Kq = ellipk(q*q)
+    return q
 
 #各パラメータの出力
 def parameters(L,m,Emax,eps):
     v = 4*math.pi*m/L
-    q = findingE1(L,m,Emax,eps)
-    if q == "Failure":
-        q = findingE2(L,m,Emax,eps)
-    if q == "Failure":
-        q = 1
+    q = finding(L,m,Emax,eps)
     N_0 = 2*(2/(1-v**2))**0.5*float(ellipe(q**2))/L
     u = v/2 + 2*N_0/v - (2-q*2)*Emax**2/(v*(1-v**2))
     T = L/v; phi = v/2
@@ -445,7 +411,7 @@ def checking_DVDM(Param,K,M,eps):
     return (dx**2 + dt**2)**0.5,eEs,eNs
 
 # Glassey,DVDM,解析解を T/3 ごとに比較
-def comparing(L,Emax,n,eps):
+def comparing(L,Emax,n,eps,times):
     Param = parameters(L,1,Emax,eps)
     T = Param[-2]
     K = math.floor(L*n); M = math.floor(T*n)
@@ -459,11 +425,11 @@ def comparing(L,Emax,n,eps):
         pd.DataFrame(time+Rs+Is+Ns).to_csv(fname)
     with open(fname) as f:
         for row in csv.reader(f, quoting=csv.QUOTE_NONNUMERIC):
-            if row[0] in [M//3+1,2*M//3+1,3*M//3+1]:
+            if row[0] in [i*M//times+1 for i in range(times+1)]:
                 RG.append(np.array(row[1:]))
-            if row[0] in [M+2+M//3,M+2+2*M//3,M+2+3*M//3]:
+            if row[0] in [M+2+i*M//times for i in range(times+1)]:
                 IG.append(np.array(row[1:]))
-            if row[0] in [2*M+3+M//3,2*M+3+2*M//3,2*M+3+3*M//3]:
+            if row[0] in [2*M+3+i*M//times for i in range(times+1)]:
                 NG.append(np.array(row[1:]))
 
     fname = "L="+str(L)+"Emax="+str(Emax)+"N="+str(n)+"DVDM.csv"
@@ -472,24 +438,24 @@ def comparing(L,Emax,n,eps):
         pd.DataFrame(time+Rs+Ns+Is+Vs).to_csv(fname)
     with open(fname) as f:
         for row in csv.reader(f, quoting=csv.QUOTE_NONNUMERIC):
-            if row[0] in [M//3+1,2*M//3+1,3*M//3+1]:
+            if row[0] in [i*M//times+1 for i in range(times+1)]:
                 RD.append(np.array(row[1:]))
-            if row[0] in [M+2+M//3,M+2+2*M//3,M+2+3*M//3]:
+            if row[0] in [M+2+i*M//times for i in range(times+1)]:
                 ID.append(np.array(row[1:]))
-            if row[0] in [2*M+3+M//3,2*M+2+2*M//3,2*M+3+3*M//3]:
+            if row[0] in [2*M+3+i*M//times for i in range(times+1)]:
                 ND.append(np.array(row[1:]))
 
     x = np.linspace(0, L, K)
 
     fig = plt.figure()
     axs = []
-    for i in range(3):
-        axs.append(fig.add_subplot(3, 3, 3*i+1))
-        axs.append(fig.add_subplot(3, 3, 3*i+2))
-        axs.append(fig.add_subplot(3, 3, 3*i+3))
+    for i in range(times+1):
+        axs.append(fig.add_subplot(4, 3, 3*i+1))
+        axs.append(fig.add_subplot(4, 3, 3*i+2))
+        axs.append(fig.add_subplot(4, 3, 3*i+3))
 
-    for i in range(3):
-        t = (i+1)*M//3
+    for i in range(times+1):
+        t = i*M//times
         tR,tI,tN = analytical_solutions(Param,t*dt,K)[:3]
 
         ax = axs[3*i:3*i+3]
@@ -519,7 +485,7 @@ M = math.floor(T*N)
 #DVDM_Glassey(Param,K,M,10**(-5))
 #print(checking_DVDM(Param,K,M,10**(-5)))
 #print(checking_DVDM(Param,K,M,10**(-8)))
-#comparing(20,2.1,10,10**(-8))
+comparing(20,1,20,10**(-8),3)
 #initial_condition(Param,K,M)
 
 ###############################################################################
