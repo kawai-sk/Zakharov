@@ -21,7 +21,7 @@ def finding(L,m,Emax,eps):
 
     #[0,1]内の二分探索
     h = 1; l = 0; q = (h+l)/2
-    Kq = ellipk(q*q)
+    Kq = ellipk(q)
     while abs(Kq - K) >= eps:
         if Kq < K:
             if l == q: #性能限界
@@ -31,15 +31,15 @@ def finding(L,m,Emax,eps):
             if h == q: #性能限界
                 break
             h = q
-        q = (h+l)/2; Kq = ellipk(q*q)
+        q = (h+l)/2; Kq = ellipk(q)
     return q
 
 #各パラメータの出力
 def parameters(L,m,Emax,eps):
     v = 4*math.pi*m/L
     q = finding(L,m,Emax,eps)
-    N_0 = 2*(2/(1-v**2))**0.5*float(ellipe(q**2))/L
-    u = v/2 + 2*N_0/v - (2-q*2)*Emax**2/(v*(1-v**2))
+    N_0 = 2*(2/(1-v**2))**0.5*v**2*Emax*float(ellipe(q))/L
+    u = v/2 + 2*N_0/v - (2-q**2)*Emax**2/(v*(1-v**2))
     T = L/v; phi = v/2
     return [L,Emax,v,q,N_0,u,T,phi]
 
@@ -55,21 +55,25 @@ T = Param[-2]
 def analytical_solutions(Param,t,K):
     L,Emax,v,q,N_0,u,T,phi = Param
     dx = L/K
-    vv = (1 - v*v)**0.5; vv2 = 1 - v*v; WW = Emax/(2**0.5*vv)
-    coef1 = -2**0.5*Emax**2*q**2*v/vv*3; coef2 = 2**0.5*v*Emax/vv; coef3 = v*Emax**2/vv2
+    vv = (1 - v*v)**0.5; vv2 = 1 - v*v; WW = Emax/(2**0.5*vv); Kq = ellipk(q)
+    coef1 = -2**0.5*Emax**3*q**2*v/vv*3; coef2 = 2**0.5*v*Emax/vv; coef3 = v*Emax**2/vv2
     W = [WW*(k*dx-v*t) for k in range(K)]
-    sn = [float(ellipfun('sn',W[k],q*q)) for k in range(len(W))]
-    dn = [float(ellipfun('dn',W[k],q*q)) for k in range(len(W))]
-    F = [Emax*dn[k] for k in range(len(W))]
+    dn = [float(ellipfun('dn',W[k],q)) for k in range(K)]
+    F = [Emax*dn[k] for k in range(K)]
 
-    R = [F[k]*math.cos(phi*(k*dx-u*t)) for k in range(len(W))]
-    I = [F[k]*math.sin(phi*(k*dx-u*t)) for k in range(len(W))]
-    N = [-F[k]**2/vv2 + N_0 for k in range(len(W))]
-    Nt0 = [float(coef1*sn[k]*dn[k]*ellipfun('cn',W[k],q*q)) for k in range(K)]
-    #V = [coef2*float(ellipe(sn[k],q*q)) for k in range(len(W))]
-    dV = [coef3*dn[k]**2 for k in range(len(W))]
+    R = [F[k]*math.cos(phi*(k*dx-u*t)) for k in range(K)]
+    I = [F[k]*math.sin(phi*(k*dx-u*t)) for k in range(K)]
+    N = [-F[k]**2/vv2 + N_0 for k in range(K)]
+    Nt = [coef1*dn[k]*float(ellipfun('sn',W[k],q)*ellipfun('cn',W[k],q)) for k in range(K)]
 
-    return R,I,N,Nt0,dV
+    snV = [float(asin(ellipfun('sn',W[k],q))) if -Kq < W[k] <= Kq
+     else math.pi - float(asin(ellipfun('sn',2*Kq - W[k],q))) if W[k] > Kq
+      else float(asin(ellipfun('sn',W[k] - 2*Kq,q))) - math.pi for k in range(K)]
+
+    V = [coef2*float(ellipe(snV[k],q**0.5)) - N_0*(k*dx-v*t)/v for k in range(K)]
+    dV = [coef3*dn[k]**2 - N_0/v for k in range(K)]
+
+    return R,I,N,Nt,dV,V
 
 ###############################################################################
 #初期条件
@@ -123,20 +127,12 @@ def initial_condition(Param,K,M):
     L,Emax,v,q,N_0,u,T,phi = Param
     dx = L/K; dt = T/M
 
-    R0,I0,N0,Nt0,dV0 = analytical_solutions(Param,0,K)
+    R0,I0,N0,Nt0,dV0,V0 = analytical_solutions(Param,0,K)
 
     d2N0 = SCD(N0,dx)
     dR0 = CD(R0,dx); d2R0 = SCD(R0,dx)
     dI0 = CD(I0,dx); d2I0 = SCD(I0,dx)
     N1 = [N0[k] + dt*Nt0[k] + dt**2*(0.5*d2N0[k] + dR0[k]**2 + dI0[k]**2 + R0[k]*d2R0[k] + I0[k]*d2I0[k]) for k in range(K)]
-
-    DD = -2*np.eye(K-1,k=0) + np.eye(K-1,k=1) + np.eye(K-1,k=-1)
-    DDI = np.linalg.inv(DD)
-
-    dN = [(N1[k]-N0[k])/dt for k in range(1,K)]
-    V0 = dx**2 * np.dot(DDI,dN)
-    V0 = [0]+[V0[i] for i in range(K-1)]
-    #V0 = [V0[i] - V0[0] for i in range(K)]; print(dist(V,V0,dx)); print(dist(Nt0,SCD(V,dx),dx)); print(dist(Nt0,SCD(V0,dx),dx))
 
     return R0,I0,N0,N1,V0,dV0
 
@@ -149,18 +145,19 @@ def initial_condition_solitons(Emax,K,M):
     dt = T/M; dx = L/K
 
     vv = (1 - v*v)**0.5; vv2 = 1 - v*v; WW = Emax/(2**0.5*vv); coef = -2**0.5*Emax**2*q**2*v/vv*3
+    Kq = ellipk(q); coef2 = 2**0.5*v*Emax/vv
     W = [WW*(k*dx-10) for k in range(K)]
-    dn = [float(ellipfun('dn',W[k],q*q)) for k in range(K)]
+    dn = [float(ellipfun('dn',W[k],q)) for k in range(K)]
     F = [Emax*dn[k] for k in range(K)]
 
     Rbase1 = [F[k]*math.cos(phi*(k*dx-10)) for k in range(K)]
     Ibase1 = [F[k]*math.sin(phi*(k*dx-10)) for k in range(K)]
-    Rbase2 = [F[k]*math.cos(-phi*(k*dx-10)) for k in range(K)]
-    Ibase2 = [F[k]*math.sin(-phi*(k*dx-10)) for k in range(K)]
+    Rbase2 = [Rbase1[k] for k in range(K)]
+    Ibase2 = [-Ibase1[k] for k in range(K)]
 
     Nbase = [-F[k]**2/vv2 + N_0 for k in range(len(W))]
-    Ntbase1 = [float(coef*dn[k]*ellipfun('sn',W[k],q*q)*ellipfun('cn',W[k],q*q)) for k in range(K)]
-    Ntbase2 = [float(-coef*dn[k]*ellipfun('sn',W[k],q*q)*ellipfun('cn',W[k],q*q)) for k in range(K)]
+    Ntbase1 = [float(coef*dn[k]*ellipfun('sn',W[k],q)*ellipfun('cn',W[k],q)) for k in range(K)]
+    Ntbase2 = [-Ntbase1[k] for k in range(K)]
 
     d2N = SCD(Nbase,dx)
     dR1 = CD(Rbase1,dx); d2R1 = SCD(Rbase1,dx)
@@ -171,24 +168,31 @@ def initial_condition_solitons(Emax,K,M):
     dI2 = CD(Ibase2,dx); d2I2 = SCD(Ibase2,dx)
     N1b2 = [Nbase[k] + dt*Ntbase2[k] + dt**2*(0.5*d2N[k] + dR2[k]**2 + dI2[k]**2 + Rbase2[k]*d2R2[k] + Ibase2[k]*d2I2[k]) for k in range(K)]
 
-    DD = -2*np.eye(K-1,k=0) + np.eye(K-1,k=1) + np.eye(K-1,k=-1)
-    DDI = np.linalg.inv(DD)
+    snV = [float(asin(ellipfun('sn',W[k],q))) if -Kq < W[k] <= Kq
+     else math.pi - float(asin(ellipfun('sn',2*Kq - W[k],q))) if W[k] > Kq
+      else float(asin(ellipfun('sn',W[k] - 2*Kq,q))) - math.pi for k in range(K)]
 
-    dN1 = [(N1b1[k]-Nbase[k])/dt for k in range(1,K)]
-    Vbase1 = dx**2 * np.dot(DDI,dN1)
-    Vbase1 = [0]+[Vbase1[i] for i in range(K-1)]
-
-    dN2 = [(N1b2[k]-Nbase[k])/dt for k in range(1,K)]
-    Vbase2 = dx**2 * np.dot(DDI,dN2)
-    Vbase2 = [0]+[Vbase2[i] for i in range(K-1)]
+    Vbase1 = [coef2*float(ellipe(snV[k],q**0.5)) - N_0*k*dx/v for k in range(K)]
+    Vbase1 = [Vbase1[k] - Vbase1[0] for k in range(K)]
+    Vbase2 = [-Vbase1[k] for k in range(K)]
 
     R0 = [0 for k in range(3*K)]+Rbase1+Rbase2+[0 for k in range(3*K)]
     I0 = [0 for k in range(3*K)]+Ibase1+Ibase2+[0 for k in range(3*K)]
     N0 = [N_0 for k in range(3*K)]+Nbase+Nbase+[N_0 for k in range(3*K)]
     N1 = [N_0 for k in range(3*K)]+N1b1+N1b2+[N_0 for k in range(3*K)]
     V0 = [0 for k in range(3*K)]+Vbase1+Vbase2+[0 for k in range(3*K)]
-
+    x = np.linspace(0,160,K0)
+    plt.plot(x,R0,label="R")
+    plt.plot(x,I0,label="I")
+    plt.plot(x,N0,label="N")
+    plt.plot(x,V0,label="V")
+    plt.legend()
+    plt.xlabel("time")
+    plt.ylabel("dn")
+    plt.show()
     return R0,I0,N0,N1,V0
+
+#initial_condition_solitons(1,K,M)
 
 ###############################################################################
 #スキーム本体
@@ -390,25 +394,25 @@ def DVDM_Glassey(Param,K,M,eps):
 
 def checking_DVDM(Param,K,M,eps):
     dx = L/K; dt = T/M #print(dt,dx)
-    Rs,Is,Ns = DVDM_Glassey(Param,K,M,eps)[:3]
-    eEs = []; eNs = []
-    rEs = []; rNs = []
+    Rs,Is,Ns,Vs = DVDM_Glassey(Param,K,M,eps)[1:]
+    eEs = []; eNs = []; eVs = []
+    rEs = []; rNs = []; eNs = []
 
     RANGE = [i for i in range(len(Rs))]
     #RANGE = [len(Rs)-1] # 最終時刻での誤差だけ知りたいとき
     for i in RANGE:
-        tR,tI,tN = analytical_solutions(Param,i*dt,K)[:3]
+        tR,tI,tN,_,_,tV = analytical_solutions(Param,i*dt,K)
 
         tnorm = (norm(tR,dx) + norm(tI,dx))**0.5
 
-        eEs.append((dist(Rs[i],tR,dx)**2+dist(Is[i],tI,dx)**2)**0.5); eNs.append(dist(Ns[i],tN,dx))
-        rEs.append(eEs[i]/tnorm); rNs.append(eNs[i]/norm(tN,dx)**2)
-    print("各要素の最大誤差:",max(eEs),max(eNs))
-    print("各要素の最大誤差比:",max(rEs),max(rNs))
+        eEs.append((dist(Rs[i],tR,dx)**2+dist(Is[i],tI,dx)**2)**0.5); eNs.append(dist(Ns[i],tN,dx)); eVs.append(dist(Vs[i],tV,dx))
+        rEs.append(eEs[i]/tnorm); rNs.append(eNs[i]/norm(tN,dx)**2); rVs.append(eVs[i]/norm(tV,dx)**2)
+    print("各要素の最大誤差:",max(eEs),max(eNs),max(eVs))
+    print("各要素の最大誤差比:",max(rEs),max(rNs),max(rVs))
     for i in range(4):
         j = math.floor(T*(i+1)/(4*dt))
-        print("t:",32*(i+1)/4,",",eEs[j],eNs[j],",",rEs[j],rNs[j])
-    return (dx**2 + dt**2)**0.5,eEs,eNs
+        print("t:",32*(i+1)/4,",",eEs[j],eNs[j],eVs[j],",",rEs[j],rNs[j],rVs[j])
+    return (dx**2 + dt**2)**0.5,eEs,eNs,eVs
 
 # Glassey,DVDM,解析解を T/3 ごとに比較
 def comparing(L,Emax,n,eps,times):
@@ -417,7 +421,7 @@ def comparing(L,Emax,n,eps,times):
     K = math.floor(L*n); M = math.floor(T*n)
     dx = L/K; dt = T/M
     RG,IG,NG = [],[],[]
-    RD,ID,ND = [],[],[]
+    RD,ID,ND,VD = [],[],[],[]
 
     fname = "L="+str(L)+"Emax="+str(Emax)+"N="+str(n)+"Glassey.csv"
     if not os.path.isfile(fname):
@@ -444,35 +448,39 @@ def comparing(L,Emax,n,eps,times):
                 ID.append(np.array(row[1:]))
             if row[0] in [2*M+3+i*M//times for i in range(times+1)]:
                 ND.append(np.array(row[1:]))
+            if row[0] in [3*M+4+i*M//times for i in range(times+1)]:
+                VD.append(np.array(row[1:]))
 
     x = np.linspace(0, L, K)
 
     fig = plt.figure()
     axs = []
-    for i in range(times+1):
-        axs.append(fig.add_subplot(4, 3, 3*i+1))
-        axs.append(fig.add_subplot(4, 3, 3*i+2))
-        axs.append(fig.add_subplot(4, 3, 3*i+3))
+    for i in range(times):
+        axs.append(fig.add_subplot(times, 4, 4*i+1))
+        axs.append(fig.add_subplot(times, 4, 4*i+2))
+        axs.append(fig.add_subplot(times, 4, 4*i+3))
+        axs.append(fig.add_subplot(times, 4, 4*i+4))
 
-    for i in range(times+1):
-        t = i*M//times
-        tR,tI,tN = analytical_solutions(Param,t*dt,K)[:3]
+    for i in range(times):
+        t = (i+1)*M//times
+        tR,tI,tN,_,_,tV = analytical_solutions(Param,t*dt,K)
 
-        ax = axs[3*i:3*i+3]
+        ax = axs[4*i:4*i+4]
 
-        l1,l2,l3 = "Glassey","DVDM","analytical"
-        ax[0].plot(x, RG[i], label=l1+",ReE")
-        ax[0].plot(x, RD[i], label=l2+",ReE")
+        l1,l2,l3 = "G","D","A"
+        ax[0].plot(x, RG[i+1], label=l1+",ReE")
+        ax[0].plot(x, RD[i+1], label=l2+",ReE")
         ax[0].plot(x, tR, label=l3+",ReE")
-        ax[1].plot(x, IG[i], label=l1+",ImE")
-        ax[1].plot(x, ID[i], label=l2+",ImE")
+        ax[1].plot(x, IG[i+1], label=l1+",ImE")
+        ax[1].plot(x, ID[i+1], label=l2+",ImE")
         ax[1].plot(x, tI, label=l3+",ImE")
-        ax[2].plot(x, NG[i], label=l1+",N")
-        ax[2].plot(x, ND[i], label=l2+",N")
+        ax[2].plot(x, NG[i+1], label=l1+",N")
+        ax[2].plot(x, ND[i+1], label=l2+",N")
         ax[2].plot(x, tN, label=l3+",N")
-        ax[0].legend(); ax[1].legend(); ax[2].legend()
+        ax[3].plot(x, VD[i+1], label=l2+",V")
+        ax[3].plot(x, tV, label=l3+",V")
+        ax[0].legend(); ax[1].legend(); ax[2].legend(); ax[3].legend()
     plt.show()
-
 
 N = 10
 K = math.floor(L*N)
@@ -485,7 +493,7 @@ M = math.floor(T*N)
 #DVDM_Glassey(Param,K,M,10**(-5))
 #print(checking_DVDM(Param,K,M,10**(-5)))
 #print(checking_DVDM(Param,K,M,10**(-8)))
-comparing(20,1,20,10**(-8),3)
+comparing(20,1.3,10,10**(-8),2)
 #initial_condition(Param,K,M)
 
 ###############################################################################

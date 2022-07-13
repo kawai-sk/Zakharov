@@ -36,8 +36,8 @@ def finding(L,m,Emax,eps):
 def parameters(L,m,Emax,eps):
     v = 4*math.pi*m/L
     q = finding(L,m,Emax,eps)
-    N_0 = 2*(2/(1-v**2))**0.5*float(ellipe(q))/L
-    u = v/2 + 2*N_0/v - (2-q*2)*Emax**2/(v*(1-v**2))
+    N_0 = 2*(2/(1-v**2))**0.5*v**2*Emax*float(ellipe(q))/L
+    u = v/2 + 2*N_0/v - (2-q**2)*Emax**2/(v*(1-v**2))
     T = L/v; phi = v/2
     return [L,Emax,v,q,N_0,u,T,phi]
 
@@ -53,46 +53,48 @@ L,Emax,v,q,N_0,u,T,phi = Param
 def analytical_solutions(Param,t,K):
     L,Emax,v,q,N_0,u,T,phi = Param
     dx = L/K
-    vv = (1 - v*v)**0.5; vv2 = 1 - v*v; WW = Emax/(2**0.5*vv)
-    coef1 = -2**0.5*Emax**2*q*v/vv*3; coef2 = 2**0.5*v*Emax/vv; coef3 = v*Emax**2/vv2
-    W = [WW*(k*dx-v*t) for k in range(K)]
-    sn = [float(ellipfun('sn',W[k],q)) for k in range(len(W))]
-    dn = [float(ellipfun('dn',W[k],q)) for k in range(len(W))]
+    vv = (1 - v*v)**0.5; vv2 = 1 - v*v; WW = Emax/(2**0.5*vv); Kq = ellipk(q)
+    coef1 = -2**0.5*Emax**3*q**2*v/vv*3; coef2 = 2**0.5*v*Emax/vv; coef3 = v*Emax**2/vv2
+    W = [WW*(k*dx-v*t) for k in range(K+1)]
+    dn = [float(ellipfun('dn',W[k],q)) for k in range(K)]
+    F = [Emax*dn[k] for k in range(K)]
 
-    F = [Emax*dn[k] for k in range(len(W))]
+    R = [F[k]*math.cos(phi*(k*dx-u*t)) for k in range(K)]
+    I = [F[k]*math.sin(phi*(k*dx-u*t)) for k in range(K)]
+    N = [-F[k]**2/vv2 + N_0 for k in range(K)]
+    Nt = [float(coef1*dn[k]*float(ellipfun('sn',W[k],q))*ellipfun('cn',W[k],q)) for k in range(K)]
 
-    R = [F[k]*math.cos(phi*(k*dx-u*t)) for k in range(len(W))]
-    I = [F[k]*math.sin(phi*(k*dx-u*t)) for k in range(len(W))]
-    N = [-F[k]**2/vv2 + N_0 for k in range(len(W))]
-    Nt0 = [float(coef1*sn[k]*dn[k]*ellipfun('cn',W[k],q)) for k in range(K)]
-    #V = [coef2*float(ellipe(sn[k],q)) for k in range(len(W))]
-    dV = [coef3*dn[k]**2 for k in range(len(W))]
+    snV = [float(asin(ellipfun('sn',W[k],q))) if -Kq < W[k] <= Kq
+     else math.pi - float(asin(ellipfun('sn',2*Kq - W[k],q))) if W[k] > Kq
+      else float(asin(ellipfun('sn',W[k] - 2*Kq,q))) for k in range(K+1)]
 
-    return R,I,N,Nt0,dV
+    V = [coef2*float(ellipe(snV[k],q**0.5)) - N_0*(k*dx-v*t)/v for k in range(K+1)]
+    dV = [coef3*dn[k]**2 - N_0/v for k in range(K)]
+
+    return R,I,N,Nt,dV,V
+
+def FD(v,dx):
+    K = len(v)
+    return [(v[(k+1)%K] - v[k])/dx for k in range(K)]
 
 def checking_analycal(n):
-    Emaxs = [1,1.3,2.1]
+    Emaxs = [1]
     L = 20
     K = math.floor(L*n); dx = L/K
     L = 20; m = 1; eps = 10**(-9)
     x = np.linspace(0, L, K)
     for Emax in Emaxs:
-        L,Emax,v,q,N_0,u,T,phi = parameters(20,1,Emax,eps)
-        T = Param[-2]
-        M = math.floor(T*n); dt = T/M
-        vv = (1 - v*v)**0.5; vv2 = 1 - v*v; WW = Emax/(2**0.5*vv)
-        W = [WW*(k*dx) for k in range(K)]
-        dn = [float(ellipfun('dn',W[k],q)) for k in range(len(W))]
-        #print(L,2*ellipk(q))
-        print(ellipfun('dn',0,q))
-        print(ellipfun('dn',2*ellipk(q),q))
-        print(ellipfun('dn',L*Emax/(2**0.5*vv),q))
-        plt.plot(x,dn,label="Emax="+str(Emax))
+        Param = parameters(20,1,Emax,eps)
+        dV,V = analytical_solutions(Param,0,K)[-2:]
+        dV2 = FD(V,dx)[:K]
+        plt.plot(x,V[:K],label="V,Emax="+str(Emax))
+        plt.plot(x,dV,label="dV1,Emax="+str(Emax))
+        plt.plot(x,dV2,label="dV2,Emax="+str(Emax))
         plt.legend()
     plt.xlabel("x")
-    plt.ylabel("dn")
+    plt.ylabel("dV")
     plt.show()
-#checking_analycal(100)
+checking_analycal(100)
 
 ###############################################################################
 #初期条件
@@ -214,7 +216,7 @@ def ploting_solutions(Param,n):
     plt.show()
 
 def checking_invariants(n):
-    Emaxs = [2.1]
+    Emaxs = [1]
     #Emaxs = [0.18 + (1.3-0.18)*i/m for i in range(m+1)]
     Errors = []
     L = 20; m = 1; eps = 10**(-9)
@@ -235,10 +237,8 @@ def checking_invariants(n):
         for i in range(M+1):
             print(i,M)
             time.append(i*dt)
-            R,I,N,Nt,dV = analytical_solutions(Param,i*dt,K)
+            R,I,N,Nt,dV,V = analytical_solutions(Param,i*dt,K)
 
-            V = dx**2 * np.dot(DDI,Nt[1:])
-            V = [0]+[V[i] for i in range(K-1)]
 
             Norms.append(norm(R,dx) + norm(I,dx))
             Energys1.append(energy(R,I,N,dV,dx))
@@ -268,7 +268,6 @@ def checking_norms(n):
             time.append(i/M)
             dx = L/K
             vv = (1 - v*v)**0.5; vv2 = 1 - v*v; WW = Emax/(2**0.5*vv)
-            print(Emax,WW,1-q,1-q)
             W = [WW*(k*dx-v*i*dt) for k in range(K)]
             dn = [Emax**2*scipy.special.ellipj(W[k],q)[2] for k in range(len(W))]
             Norm.append(norm(dn,dx))
@@ -344,14 +343,39 @@ def checking_norms4(Emax,n,times):
     time = [i*dt*M/times for i in range(times+1)]
     x = np.linspace(0, L, K)
 
-    for i in range(len(time)):
+    for i in range(times+1):
         t = time[i]
-        W = [WW*(k*dx-v*t) for k in range(K)]
-        dn = [float(ellipfun('dn',W[k],q)) for k in range(len(W))]
-        if i == 0:
-            print(dn[0],dn[-K//50],K)
-        plt.plot(x,dn,label="t="+str(t))
-    plt.legend()
+        vv = (1 - v*v)**0.5; vv2 = 1 - v*v; WW = Emax/(2**0.5*vv); coef2 = 2**0.5*v*Emax/vv
+        W = [WW*(k*dx-v*t) for k in range(K+1)]
+        sn = [float(ellipfun('sn',W[k],q)) for k in range(K+1)]
+        asn = [float(asin(sn[k])) for k in range(K+1)]
+        judge = 0
+        plt.plot(x,sn[:K],label="sn,t="+str(t))
+        plt.plot(x,asn[:K],label="asn,t="+str(t))
+        for k in range(K+1):
+            if abs(asn[0]) == math.pi/2:
+                break
+            if judge == 0:
+                if asn[k] == math.pi/2:
+                    judge = 1
+                if asn[k] == -math.pi/2:
+                    judge = -1
+            if judge != 0:
+                asn[k] = judge*math.pi - asn[k]
+        dn = [float(ellipfun('dn',W[k],q)) for k in range(K)]
+        V = [coef2*float(ellipe(asin(sn[k]),q**0.5)) - N_0*(k*dx-v*t)/v for k in range(K+1)]
+        if abs(float(ellipe(asin(sn[K//2]),q**0.5))) >= 1 - eps:
+            tent = 2*float(ellipe(asin(sn[K//2]),q**0.5))
+            V2 = V[:K//2] + [-coef2*float(ellipe(asn[k],q**0.5)-tent) - N_0*(k*dx-v*t)/v for k in range(K//2,K+1)]
+        else:
+            V2 = V
+        #dV = FD(V,dx)
+        #plt.plot(x,dn,label="dn,t="+str(t))
+        #plt.plot(x,sn[:K],label="sn,t="+str(t))
+        plt.plot(x,asn[:K],label="asn2,t="+str(t))
+        #plt.plot(x,V[:K],label="V,t="+str(t))
+        #plt.plot(x,V2[:K],label="V2,t="+str(t))
+        plt.legend()
     plt.xlabel("time")
     plt.ylabel("dn")
     plt.show()
@@ -384,9 +408,10 @@ def checking_energys(n):
     plt.xlabel("Emax")
     plt.ylabel("Energy")
     plt.show()
+
 #ploting_initial_solutions(Param,100)
 #checking_norms(1)
-checking_norms3(1,20)
-#checking_norms4(2.1,20,4)
+#checking_norms3(1,20)
+#checking_norms4(2.1,20,2)
 #checking_energys(10)
 #checking_invariants(5)
