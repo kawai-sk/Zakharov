@@ -66,9 +66,9 @@ def analytical_solutions(Param,t,K):
 
     snV = [float(asin(ellipfun('sn',W[k],q))) if -Kq < W[k] <= Kq
      else math.pi - float(asin(ellipfun('sn',2*Kq - W[k],q))) if W[k] > Kq
-      else float(asin(ellipfun('sn',W[k] - 2*Kq,q))) for k in range(K+1)]
+      else float(asin(ellipfun('sn',W[k] - 2*Kq,q))) for k in range(K)]
 
-    V = [coef2*float(ellipe(snV[k],q**0.5)) - N_0*(k*dx-v*t)/v for k in range(K+1)]
+    V = [coef2*float(ellipe(snV[k],q)) - N_0*(k*dx-v*t)/v for k in range(K)]
     dV = [coef3*dn[k]**2 - N_0/v for k in range(K)]
 
     return R,I,N,Nt,dV,V
@@ -78,7 +78,7 @@ def FD(v,dx):
     return [(v[(k+1)%K] - v[k])/dx for k in range(K)]
 
 def checking_analycal(n):
-    Emaxs = [1]
+    Emaxs = [0.18]
     L = 20
     K = math.floor(L*n); dx = L/K
     L = 20; m = 1; eps = 10**(-9)
@@ -86,8 +86,8 @@ def checking_analycal(n):
     for Emax in Emaxs:
         Param = parameters(20,1,Emax,eps)
         dV,V = analytical_solutions(Param,0,K)[-2:]
-        dV2 = FD(V,dx)[:K]
-        plt.plot(x,V[:K],label="V,Emax="+str(Emax))
+        dV2 = FD(V,dx)
+        plt.plot(x,V,label="V,Emax="+str(Emax))
         plt.plot(x,dV,label="dV1,Emax="+str(Emax))
         plt.plot(x,dV2,label="dV2,Emax="+str(Emax))
         plt.legend()
@@ -346,35 +346,19 @@ def checking_norms4(Emax,n,times):
     for i in range(times+1):
         t = time[i]
         vv = (1 - v*v)**0.5; vv2 = 1 - v*v; WW = Emax/(2**0.5*vv); coef2 = 2**0.5*v*Emax/vv
-        W = [WW*(k*dx-v*t) for k in range(K+1)]
-        sn = [float(ellipfun('sn',W[k],q)) for k in range(K+1)]
-        asn = [float(asin(sn[k])) for k in range(K+1)]
-        judge = 0
-        plt.plot(x,sn[:K],label="sn,t="+str(t))
-        plt.plot(x,asn[:K],label="asn,t="+str(t))
-        for k in range(K+1):
-            if abs(asn[0]) == math.pi/2:
-                break
-            if judge == 0:
-                if asn[k] == math.pi/2:
-                    judge = 1
-                if asn[k] == -math.pi/2:
-                    judge = -1
-            if judge != 0:
-                asn[k] = judge*math.pi - asn[k]
+        W = [WW*(k*dx-v*t) for k in range(K)]
         dn = [float(ellipfun('dn',W[k],q)) for k in range(K)]
-        V = [coef2*float(ellipe(asin(sn[k]),q**0.5)) - N_0*(k*dx-v*t)/v for k in range(K+1)]
-        if abs(float(ellipe(asin(sn[K//2]),q**0.5))) >= 1 - eps:
-            tent = 2*float(ellipe(asin(sn[K//2]),q**0.5))
-            V2 = V[:K//2] + [-coef2*float(ellipe(asn[k],q**0.5)-tent) - N_0*(k*dx-v*t)/v for k in range(K//2,K+1)]
-        else:
-            V2 = V
+        snV = [float(asin(ellipfun('sn',W[k],q))) if -Kq < W[k] <= Kq
+         else math.pi - float(asin(ellipfun('sn',2*Kq - W[k],q))) if W[k] > Kq
+          else float(asin(ellipfun('sn',W[k] - 2*Kq,q))) for k in range(K)]
+
+        V = [coef2*float(ellipe(snV[k],q)) - N_0*(k*dx-v*t)/v for k in range(K)]
+
         #dV = FD(V,dx)
         #plt.plot(x,dn,label="dn,t="+str(t))
-        #plt.plot(x,sn[:K],label="sn,t="+str(t))
-        plt.plot(x,asn[:K],label="asn2,t="+str(t))
-        #plt.plot(x,V[:K],label="V,t="+str(t))
-        #plt.plot(x,V2[:K],label="V2,t="+str(t))
+        #plt.plot(x,sn,label="sn,t="+str(t))
+        plt.plot(x,snV,label="snV,t="+str(t))
+        #plt.plot(x,V,label="V,t="+str(t))
         plt.legend()
     plt.xlabel("time")
     plt.ylabel("dn")

@@ -70,7 +70,7 @@ def analytical_solutions(Param,t,K):
      else math.pi - float(asin(ellipfun('sn',2*Kq - W[k],q))) if W[k] > Kq
       else float(asin(ellipfun('sn',W[k] - 2*Kq,q))) - math.pi for k in range(K)]
 
-    V = [coef2*float(ellipe(snV[k],q**0.5)) - N_0*(k*dx-v*t)/v for k in range(K)]
+    V = [coef2*float(ellipe(snV[k],q)) - N_0*(k*dx-v*t)/v for k in range(K)]
     dV = [coef3*dn[k]**2 - N_0/v for k in range(K)]
 
     return R,I,N,Nt,dV,V
@@ -172,7 +172,7 @@ def initial_condition_solitons(Emax,K,M):
      else math.pi - float(asin(ellipfun('sn',2*Kq - W[k],q))) if W[k] > Kq
       else float(asin(ellipfun('sn',W[k] - 2*Kq,q))) - math.pi for k in range(K)]
 
-    Vbase1 = [coef2*float(ellipe(snV[k],q**0.5)) - N_0*k*dx/v for k in range(K)]
+    Vbase1 = [coef2*float(ellipe(snV[k],q)) - N_0*k*dx/v for k in range(K)]
     Vbase1 = [Vbase1[k] - Vbase1[0] for k in range(K)]
     Vbase2 = [-Vbase1[k] for k in range(K)]
 
@@ -493,7 +493,7 @@ M = math.floor(T*N)
 #DVDM_Glassey(Param,K,M,10**(-5))
 #print(checking_DVDM(Param,K,M,10**(-5)))
 #print(checking_DVDM(Param,K,M,10**(-8)))
-comparing(20,1.3,10,10**(-8),2)
+comparing(20,0.18,20,10**(-8),2)
 #initial_condition(Param,K,M)
 
 ###############################################################################
