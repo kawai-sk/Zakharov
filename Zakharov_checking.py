@@ -54,7 +54,7 @@ def analytical_solutions(Param,t,K):
     L,Emax,v,q,N_0,u,T,phi = Param
     dx = L/K
     vv = (1 - v*v)**0.5; vv2 = 1 - v*v; WW = Emax/(2**0.5*vv); Kq = ellipk(q)
-    coef1 = -2**0.5*Emax**3*q**2*v/vv*3; coef2 = 2**0.5*v*Emax/vv; coef3 = v*Emax**2/vv2
+    coef1 = -2**0.5*Emax**3*q**2*v/(vv*3); coef2 = 2**0.5*v*Emax/vv; coef3 = v*Emax**2/vv2
     W = [WW*(k*dx-v*t) for k in range(K+1)]
     dn = [float(ellipfun('dn',W[k],q)) for k in range(K)]
     F = [Emax*dn[k] for k in range(K)]
@@ -71,7 +71,13 @@ def analytical_solutions(Param,t,K):
     V = [coef2*float(ellipe(snV[k],q)) - N_0*(k*dx-v*t)/v for k in range(K)]
     dV = [coef3*dn[k]**2 - N_0/v for k in range(K)]
 
-    return R,I,N,Nt,dV,V
+    print(dist(Nt,SCD(V,dx),dx))
+    print(dist(Nt,CD(CD(V,dx),dx),dx))
+    print(dist(Nt,CD(dV,dx),dx))
+    print(dist(CD(V,dx),dV,dx))
+    print(dist(SCD(V,dx),FD(dV,dx),dx))
+
+    return R,I,N,Nt,V,dV
 
 def FD(v,dx):
     K = len(v)
@@ -94,7 +100,7 @@ def checking_analycal(n):
     plt.xlabel("x")
     plt.ylabel("dV")
     plt.show()
-checking_analycal(100)
+#checking_analycal(100)
 
 ###############################################################################
 #初期条件
@@ -155,21 +161,47 @@ def initial_condition(Param,K,M):
     L,Emax,v,q,N_0,u,T,phi = Param
     dx = L/K; dt = T/M
 
-    R0,I0,N0,Nt0,dV0 = analytical_solutions(Param,0,K)
+    R0,I0,N0,Nt0,V0,dV0 = analytical_solutions(Param,0,K)
 
     d2N0 = SCD(N0,dx)
     dR0 = CD(R0,dx); d2R0 = SCD(R0,dx)
     dI0 = CD(I0,dx); d2I0 = SCD(I0,dx)
+    N10 = [N0[k] + dt*Nt0[k] for k in range(K)]
     N1 = [N0[k] + dt*Nt0[k] + dt**2*(0.5*d2N0[k] + dR0[k]**2 + dI0[k]**2 + R0[k]*d2R0[k] + I0[k]*d2I0[k]) for k in range(K)]
 
-    DD = -2*np.eye(K-1,k=0) + np.eye(K-1,k=1) + np.eye(K-1,k=-1)
-    DDI = np.linalg.inv(DD)
+    d2Nt0 = SCD(Nt0,dx)
+    N12 = [N1[k] + (1/6)*dt**3*(d2Nt0[k]+2*d2R0[k]*I0[k]-2*R0[k]*d2I0[k]) for k in range(K)]
 
-    dN = [(N1[k]-N0[k])/dt for k in range(1,K)]
-    V0 = dx**2 * np.dot(DDI,dN)
-    V0 = [0]+[V0[i] for i in range(K-1)]
+    return R0,I0,N0,N10,N1,N12,V0,dV0
 
-    return R0,I0,N0,N1,V0,dV0
+def checking_N(Emax):
+    ns = [10*i for i in range(1,11)]
+    Param = parameters(20,1,Emax,10**(-8))
+    T = Param[-2]
+    deltas = []
+    errors0 = []
+    errors = []
+    errors2 = []
+    for n in ns:
+        print(n,ns[-1])
+        K = math.floor(L*n); M = math.floor(T*n)
+        dt = T/M; dx = L/K
+        N10,N1,N12 = initial_condition(Param,K,M)[3:6]
+        N1true = analytical_solutions(Param,dt,K)[2]
+        deltas.append(dt)
+        errors0.append(dist(N10,N1true,dx))
+        errors.append(dist(N1,N1true,dx))
+        errors2.append(dist(N12,N1true,dx))
+    plt.plot(deltas,errors0,label="0,Emax="+str(Emax))
+    plt.plot(deltas,errors,label="1,Emax="+str(Emax))
+    plt.plot(deltas,errors2,label="2,Emax="+str(Emax))
+    plt.legend()
+    plt.xlabel("Δt=Δx")
+    plt.ylabel("Error of N on t=Δt")
+    plt.show()
+
+#checking_N(0.18)
+
 
 ###############################################################################
 # 真の解の描画
@@ -371,7 +403,6 @@ def checking_energys(n):
 
     for Emax in Emaxs:
         L,Emax,v,q,N_0,u,T,phi = parameters(L,1,Emax,eps)
-        T = L/v; phi = v/2
         Param = [L,Emax,v,q,N_0,u,T,phi]
         K = math.floor(L*n); M = math.floor(T*n)
         dt = T/M; dx = L/K
