@@ -14,6 +14,8 @@ from mpmath import *
 ###############################################################################
 #パラメータを定めるための関数
 
+mp.dps = 30
+print(mp)
 #qの探索：普通に計算できる場合
 def finding(L,m,Emax,eps):
     #計算に使う定数
@@ -22,6 +24,8 @@ def finding(L,m,Emax,eps):
     #[0,1]内の二分探索
     h = 1; l = 0; q = (h+l)/2
     Kq = ellipk(q)
+    q1 = mpf(0.99999999999999957835)
+    print(K,q1,ellipk(q1))
     while abs(Kq - K) >= eps:
         if Kq < K:
             if l == q: #性能限界
@@ -129,14 +133,64 @@ def initial_condition(Param,K,M,Ntype):
 
     R0,I0,N0,Nt0,V0,dV0 = analytical_solutions(Param,0,K)
 
-    if Ntype == 1:
+    # 以下，Glasseyで使うN1の計算
+    # Taylor展開
+    if Ntype == 1 or Ntype == 3:
         d2N0 = SCD(N0,dx)
         dR0 = CD(R0,dx); d2R0 = SCD(R0,dx)
         dI0 = CD(I0,dx); d2I0 = SCD(I0,dx)
         N1 = [N0[k] + dt*Nt0[k] + dt**2*(0.5*d2N0[k] + dR0[k]**2 + dI0[k]**2 + R0[k]*d2R0[k] + I0[k]*d2I0[k]) for k in range(K)]
 
-    if Ntpe == 2:
+    # 解析解が既知の場合
+    if Ntype == 2:
         N1 = analytical_solutions(Param,dt,K)[2]
+
+    #DVDM
+    if Ntype == 3:
+        R_now,I_now,N_now,N_next,V_now = R0,I0,N0,N1,V0
+
+        Ik = np.identity(K); Zk = np.zeros((K,K))
+        Dx = (-2*Ik + np.eye(K,k=1) + np.eye(K,k=K-1) + np.eye(K,k=-1) + np.eye(K,k=-K+1))/dx**2
+        ID = np.linalg.inv(Ik-0.5*dt**2*Dx)
+
+        DR_now = np.dot(Dx,np.array(R_now)); DI_now = np.dot(Dx,np.array(I_now)); DV_now = np.dot(Dx,np.array(V_now))
+
+        dN = 0.5*dt*Dx - 0.25*dt*np.diag(N_now)
+        dR_now = 0.25*dt*np.diag(R_now); dI_now = 0.25*dt*np.diag(I_now)
+
+        F0 = np.array([- R_now[i%K] + 0.5*dt*DI_now[i%K] if i//K == 0
+            else -I_now[i%K] - 0.5*dt*DR_now[i%K] if i//K == 1
+            else -N_now[i%K] - 0.5*dt*DV_now[i%K] if i//K == 2
+            else - V_now[i%K] - 0.5*dt*(N_now[i%K] + R_now[i%K]**2 + I_now[i%K]**2) for i in range(4*K)])
+
+        D = dt*(0.5*Dx - 0.25*np.diag([N_now[k]+N_next[k] for k in range(K)]))
+        A = np.block([[Ik,D],[-D,Ik]])
+        b = np.linalg.solve(A,2*np.array([R_now[i] if i < K else I_now[i-K] for i in range(2*K)]))
+        R_next = -np.array(R_now) + b[:K]; I_next = -np.array(I_now) + b[K:]
+
+        V_next = [-V_now[k]+ 0.5*dt*(N_next[k] + N_now[k] + R_now[k]**2 + R_next[k]**2 + I_now[k]**2 + I_next[k]**2) for k in range(K)]
+        DR_next = np.dot(Dx,np.array(R_next)); DI_next = np.dot(Dx,np.array(I_next)); DV_next = np.dot(Dx,np.array(V_next))
+
+        F = F0 + np.array([R_next[i%K] + 0.5*dt*DI_next[i%K] - 0.25*dt*(I_next[i%K] + I_now[i%K])*(N_next[i%K] + N_now[i%K]) if i//K == 0
+                else I_next[i%K] - 0.5*dt*DR_next[i%K] + 0.25*dt*(R_next[i%K] + R_now[i%K])*(N_next[i%K] + N_now[i%K]) if i//K == 1
+                else N_next[i%K] - 0.5*dt*DV_next[i%K] if i//K == 2
+                else V_next[i%K] - 0.5*dt*(N_next[i%K] + R_next[i%K]**2 + I_next[i%K]**2) for i in range(4*K)])
+        while norm(F,dx)**0.5 >= eps:
+            print(norm(F,dx)**0.5)
+            dNN = dN - 0.25*dt*np.diag(N_next)
+            dR = dt*np.diag(R_next); dI = dt*np.diag(I_next)
+            dRR = 0.25*dR + dR_now; dII = 0.25*dI + dI_now
+            DF = np.block([[Ik,dNN,-dII,Zk],[-dNN,Ik,dRR,Zk],[Zk,Zk,Ik,-0.5*dt*Dx],[-dR,-dI,-0.5*dt*Ik,Ik]])
+            r = np.linalg.solve(DF,F)
+
+            R_next -= r[:K]; I_next -= r[K:2*K]; N_next -= r[2*K:3*K]; V_next -= r[3*K:]
+            DR_next = np.dot(Dx,np.array(R_next)); DI_next = np.dot(Dx,np.array(I_next)); DV_next = np.dot(Dx,np.array(V_next))
+
+            F = F0 + np.array([R_next[i%K] + 0.5*dt*DI_next[i%K] - 0.25*dt*(I_next[i%K] + I_now[i%K])*(N_next[i%K] + N_now[i%K]) if i//K == 0
+                else I_next[i%K] - 0.5*dt*DR_next[i%K] + 0.25*dt*(R_next[i%K] + R_now[i%K])*(N_next[i%K] + N_now[i%K]) if i//K == 1
+                else N_next[i%K] - 0.5*dt*DV_next[i%K] if i//K == 2
+                else V_next[i%K] - 0.5*dt*(N_next[i%K] + R_next[i%K]**2 + I_next[i%K]**2) for i in range(4*K)])
+        N1 = N_next
 
     return R0,I0,N0,N1,V0,dV0
 
@@ -174,7 +228,8 @@ def initial_condition_solitons(Emax,K,M,Ntype):
     N0 = [N_0 for k in range(3*K)]+Nbase+Nbase+[N_0 for k in range(3*K)]
     V0 = [0 for k in range(3*K)]+Vbase1+Vbase2+[0 for k in range(3*K)]
 
-    if Ntype == 1:
+    #Taylor
+    if Ntype == 1 or Ntype == 3:
         Ntbase1 = [float(coef*dn[k]*ellipfun('sn',W[k],q)*ellipfun('cn',W[k],q)) for k in range(K)]
         Ntbase2 = [-Ntbase1[k] for k in range(K)]
 
@@ -189,6 +244,7 @@ def initial_condition_solitons(Emax,K,M,Ntype):
 
         N1 = [N_0 for k in range(3*K)]+N1b1+N1b2+[N_0 for k in range(3*K)]
 
+    #1ソリトンでの解析解が既知で，2ソリトンでも(t=Δtでは)正しいと仮定
     if Ntype == 2:
         Wdt1 = [WW*(k*dx-10-v*dt) for k in range(K)]
         Wdt2 = [WW*(k*dx-10+v*dt) for k in range(K)]
@@ -201,6 +257,54 @@ def initial_condition_solitons(Emax,K,M,Ntype):
         Ndtbase2 = [-Fdt2[k]**2/vv2 + N_0 for k in range(len(W))]
 
         N1 = [N_0 for k in range(3*K)]+Ndtbase1+Ndtbase2+[N_0 for k in range(3*K)]
+
+    if Ntype == 3:
+        R_now,I_now,N_now,N_next,V_now = R0,I0,N0,N1,V0
+
+        K *= 8
+
+        Ik = np.identity(K); Zk = np.zeros((K,K))
+        Dx = (-2*Ik + np.eye(K,k=1) + np.eye(K,k=K-1) + np.eye(K,k=-1) + np.eye(K,k=-K+1))/dx**2
+        ID = np.linalg.inv(Ik-0.5*dt**2*Dx)
+
+        DR_now = np.dot(Dx,np.array(R_now)); DI_now = np.dot(Dx,np.array(I_now)); DV_now = np.dot(Dx,np.array(V_now))
+
+        dN = 0.5*dt*Dx - 0.25*dt*np.diag(N_now)
+        dR_now = 0.25*dt*np.diag(R_now); dI_now = 0.25*dt*np.diag(I_now)
+
+        F0 = np.array([- R_now[i%K] + 0.5*dt*DI_now[i%K] if i//K == 0
+            else -I_now[i%K] - 0.5*dt*DR_now[i%K] if i//K == 1
+            else -N_now[i%K] - 0.5*dt*DV_now[i%K] if i//K == 2
+            else - V_now[i%K] - 0.5*dt*(N_now[i%K] + R_now[i%K]**2 + I_now[i%K]**2) for i in range(4*K)])
+
+        D = dt*(0.5*Dx - 0.25*np.diag([N_now[k]+N_next[k] for k in range(K)]))
+        A = np.block([[Ik,D],[-D,Ik]])
+        b = np.linalg.solve(A,2*np.array([R_now[i] if i < K else I_now[i-K] for i in range(2*K)]))
+        R_next = -np.array(R_now) + b[:K]; I_next = -np.array(I_now) + b[K:]
+
+        V_next = [-V_now[k]+ 0.5*dt*(N_next[k] + N_now[k] + R_now[k]**2 + R_next[k]**2 + I_now[k]**2 + I_next[k]**2) for k in range(K)]
+        DR_next = np.dot(Dx,np.array(R_next)); DI_next = np.dot(Dx,np.array(I_next)); DV_next = np.dot(Dx,np.array(V_next))
+
+        F = F0 + np.array([R_next[i%K] + 0.5*dt*DI_next[i%K] - 0.25*dt*(I_next[i%K] + I_now[i%K])*(N_next[i%K] + N_now[i%K]) if i//K == 0
+                else I_next[i%K] - 0.5*dt*DR_next[i%K] + 0.25*dt*(R_next[i%K] + R_now[i%K])*(N_next[i%K] + N_now[i%K]) if i//K == 1
+                else N_next[i%K] - 0.5*dt*DV_next[i%K] if i//K == 2
+                else V_next[i%K] - 0.5*dt*(N_next[i%K] + R_next[i%K]**2 + I_next[i%K]**2) for i in range(4*K)])
+        while norm(F,dx)**0.5 >= eps:
+            print(norm(F,dx)**0.5)
+            dNN = dN - 0.25*dt*np.diag(N_next)
+            dR = dt*np.diag(R_next); dI = dt*np.diag(I_next)
+            dRR = 0.25*dR + dR_now; dII = 0.25*dI + dI_now
+            DF = np.block([[Ik,dNN,-dII,Zk],[-dNN,Ik,dRR,Zk],[Zk,Zk,Ik,-0.5*dt*Dx],[-dR,-dI,-0.5*dt*Ik,Ik]])
+            r = np.linalg.solve(DF,F)
+
+            R_next -= r[:K]; I_next -= r[K:2*K]; N_next -= r[2*K:3*K]; V_next -= r[3*K:]
+            DR_next = np.dot(Dx,np.array(R_next)); DI_next = np.dot(Dx,np.array(I_next)); DV_next = np.dot(Dx,np.array(V_next))
+
+            F = F0 + np.array([R_next[i%K] + 0.5*dt*DI_next[i%K] - 0.25*dt*(I_next[i%K] + I_now[i%K])*(N_next[i%K] + N_now[i%K]) if i//K == 0
+                else I_next[i%K] - 0.5*dt*DR_next[i%K] + 0.25*dt*(R_next[i%K] + R_now[i%K])*(N_next[i%K] + N_now[i%K]) if i//K == 1
+                else N_next[i%K] - 0.5*dt*DV_next[i%K] if i//K == 2
+                else V_next[i%K] - 0.5*dt*(N_next[i%K] + R_next[i%K]**2 + I_next[i%K]**2) for i in range(4*K)])
+        N1 = N_next
 
     return R0,I0,N0,N1,V0
 
@@ -448,6 +552,8 @@ def comparing(L,Emax,n,eps,times,Ntype):
         fname = "L="+str(L)+"Emax="+str(Emax)+"N="+str(n)+"Glassey.csv"
     if Ntype == 2:
         fname = "L="+str(L)+"Emax="+str(Emax)+"N="+str(n)+"GlasseyA.csv"
+    if Ntype == 3:
+        fname = "L="+str(L)+"Emax="+str(Emax)+"N="+str(n)+"GlasseyD.csv"
     if not os.path.isfile(fname):
         time,Rs,Is,Ns = Glassey(Param,K,M,Ntype,1)
         pd.DataFrame(time+Rs+Is+Ns).to_csv(fname)
@@ -490,10 +596,12 @@ def comparing(L,Emax,n,eps,times,Ntype):
         tR,tI,tN,_,tV = analytical_solutions(Param,t*dt,K)[:-1]
 
         ax = axs[4*i:4*i+4]
-
         l1,l2,l3 = "G","D","A"
         if Ntype == 2:
-            l1 = "GA"
+            l1 += "+A"
+        if Ntype == 3:
+            l1 += "+D"
+
         ax[0].plot(x, RG[i+1], label=l1+",ReE")
         ax[0].plot(x, RD[i+1], label=l2+",ReE")
         ax[0].plot(x, tR, label=l3+",ReE")
@@ -609,7 +717,7 @@ M = math.floor(T*N)
 #print(checking_DVDM(Param,K,M,10**(-5)))
 #print(checking_DVDM(Param,K,M,10**(-8)))
 #initial_condition(Param,K,M)
-#comparing(20,2.1,40,10**(-8),2)
+#comparing(20,2.1,10,10**(-8),2,3)
 #comparing_first_steps(0.18)
 #comparing_adjusted(20,1.3,10,10**(-8),2)
 
@@ -626,6 +734,8 @@ def comp_nsGlassey(L,Emax,N1,N2,Ntype):
         Gname = "Glassey.csv"
     if Ntype == 2:
         Gname == "GlasseyA.csv"
+    if Ntype == 3:
+        Gname == "GlasseyD.csv"
     fnames = ["L="+str(L)+"Emax="+str(Emax)+"N="+str(numbers[i])+Gname for i in range(2)]
     for i in range(2):
         n = numbers[i]
@@ -661,6 +771,8 @@ def conv_nsGlassey(L,Emax,n,Ntype):
         fname = "L="+str(L)+"Emax="+str(Emax)+"N="+str(n)+"Glassey.csv"
     if Ntype == 2:
         fname = "L="+str(L)+"Emax="+str(Emax)+"N="+str(n)+"GlasseyA.csv"
+    if Ntype == 3:
+        fname = "L="+str(L)+"Emax="+str(Emax)+"N="+str(n)+"GlasseyD.csv"
 
     K = math.floor(L*n); M = math.floor(T*n)
     if not os.path.isfile(fname):
@@ -757,6 +869,8 @@ def comparing_solitons(Emax,n,times,Ntype):
         fname = "Emax="+str(Emax)+"N="+str(n)+"GlasseyS.csv"
     if Ntype == 2:
         fname = "Emax="+str(Emax)+"N="+str(n)+"GlasseySA.csv"
+    if Ntype == 3:
+        fname = "Emax="+str(Emax)+"N="+str(n)+"GlasseySD.csv"
     if not os.path.isfile(fname):
         time,Rs,Is,Ns = Glassey(Param,K,M,Ntype,2)
         pd.DataFrame(time+Rs+Is+Ns).to_csv(fname)
@@ -787,25 +901,32 @@ def comparing_solitons(Emax,n,times,Ntype):
     fig = plt.figure()
     axs = []
     for i in range(times+1):
-        axs.append(fig.add_subplot(times+1, 3, 3*i+1))
-        axs.append(fig.add_subplot(times+1, 3, 3*i+2))
-        axs.append(fig.add_subplot(times+1, 3, 3*i+3))
+        axs.append(fig.add_subplot(times+1, 4, 4*i+1))
+        axs.append(fig.add_subplot(times+1, 4, 4*i+2))
+        axs.append(fig.add_subplot(times+1, 4, 4*i+3))
+        axs.append(fig.add_subplot(times+1, 4, 4*i+4))
 
     for i in range(times+1):
-        ax = axs[3*i:3*i+3]
+        ax = axs[4*i:4*i+4]
 
-        if Ntype == 1:
-            l = "G"
+        l = "G"
         if Ntype == 2:
-            l = "GA"
+            l += "+A"
+        if Ntype == 3:
+            l += "+D"
+
+        EG = [(RG[i][k]**2+IG[i][k]**2)**0.5 for k in range(len(RG[i]))]
+        ED = [(RD[i][k]**2+ID[i][k]**2)**0.5 for k in range(len(RG[i]))]
 
         ax[0].plot(x, RG[i], label=l+",ReE")
         ax[0].plot(x, RD[i], label="D"+",ReE")
         ax[1].plot(x, IG[i], label=l+",ImE")
         ax[1].plot(x, ID[i], label="D"+",ImE")
-        ax[2].plot(x, NG[i], label=l+",N")
-        ax[2].plot(x, ND[i], label="D"+",N")
-        ax[0].legend(); ax[1].legend(); ax[2].legend()
+        ax[2].plot(x, EG, label=l+",|E|")
+        ax[2].plot(x, ED, label="D"+",|E|")
+        ax[3].plot(x, NG[i], label=l+",N")
+        ax[3].plot(x, ND[i], label="D"+",N")
+        ax[0].legend(); ax[1].legend(); ax[2].legend(); ax[3].legend()
     plt.show()
 
-comparing_solitons(1,10,5,2)
+#comparing_solitons(0.18,10,6,3)

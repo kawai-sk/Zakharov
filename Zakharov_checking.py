@@ -71,12 +71,6 @@ def analytical_solutions(Param,t,K):
     V = [coef2*float(ellipe(snV[k],q)) - N_0*(k*dx-v*t)/v for k in range(K)]
     dV = [coef3*dn[k]**2 - N_0/v for k in range(K)]
 
-    print(dist(Nt,SCD(V,dx),dx))
-    print(dist(Nt,CD(CD(V,dx),dx),dx))
-    print(dist(Nt,CD(dV,dx),dx))
-    print(dist(CD(V,dx),dV,dx))
-    print(dist(SCD(V,dx),FD(dV,dx),dx))
-
     return R,I,N,Nt,V,dV
 
 def FD(v,dx):
@@ -200,7 +194,29 @@ def checking_N(Emax):
     plt.ylabel("Error of N on t=Δt")
     plt.show()
 
-#checking_N(0.18)
+def checking_Nt(Emax):
+    ns = [10*i for i in range(1,11)]
+    Param = parameters(20,1,Emax,10**(-8))
+    T = Param[-2]
+    deltas = []
+    errors0 = []
+    errors = []
+    errors2 = []
+    for n in ns:
+        K = math.floor(L*n); M = math.floor(T*n)
+        dt = T/M; dx = L/K
+        N0,Nt0 = analytical_solutions(Param,0,K)[2:4]
+        N1 = initial_condition(Param,K,M)[4]
+        dN = [(N1[k]-N0[k])/dt for k in range(K)]
+        deltas.append(dt)
+        errors.append(dist(Nt0,dN,dx))
+    plt.plot(deltas,errors,label="Emax="+str(Emax))
+    plt.legend()
+    plt.xlabel("Δt=Δx")
+    plt.ylabel("Error of Nt")
+    plt.show()
+
+checking_Nt(0.18)
 
 
 ###############################################################################
