@@ -14,8 +14,8 @@ from mpmath import *
 ###############################################################################
 #パラメータを定めるための関数
 
-mp.dps = 30
-print(mp)
+#mp.dps = 30
+#print(mp)
 #qの探索：普通に計算できる場合
 def finding(L,m,Emax,eps):
     #計算に使う定数
@@ -24,8 +24,8 @@ def finding(L,m,Emax,eps):
     #[0,1]内の二分探索
     h = 1; l = 0; q = (h+l)/2
     Kq = ellipk(q)
-    q1 = mpf(0.99999999999999957835)
-    print(K,q1,ellipk(q1))
+    #q1 = mpf(0.99999999999999957835)
+    #print(K,q1,ellipk(q1))
     while abs(Kq - K) >= eps:
         if Kq < K:
             if l == q: #性能限界
@@ -43,7 +43,7 @@ def parameters(L,m,Emax,eps):
     v = 4*math.pi*m/L
     q = finding(L,m,Emax,eps)
     N_0 = 2*(2/(1-v**2))**0.5*v**2*Emax*float(ellipe(q))/L
-    u = v/2 + 2*N_0/v - (2-q**2)*Emax**2/(v*(1-v**2))
+    u = v/2 + 2*N_0/v - (2-q)*Emax**2/(v*(1-v**2))
     T = L/v; phi = v/2
     return [L,Emax,v,q,N_0,u,T,phi]
 
@@ -60,7 +60,7 @@ def analytical_solutions(Param,t,K):
     L,Emax,v,q,N_0,u,T,phi = Param
     dx = L/K
     vv = (1 - v*v)**0.5; vv2 = 1 - v*v; WW = Emax/(2**0.5*vv); Kq = ellipk(q)
-    coef1 = -2**0.5*Emax**3*q**2*v/vv**3; coef2 = 2**0.5*v*Emax/vv; coef3 = v*Emax**2/vv2
+    coef1 = -2**0.5*Emax**3*q*v/vv**3; coef2 = 2**0.5*v*Emax/vv; coef3 = v*Emax**2/vv2
     W = [WW*(k*dx-v*t) for k in range(K)]
     dn = [float(ellipfun('dn',W[k],q)) for k in range(K)]
     F = [Emax*dn[k] for k in range(K)]
@@ -202,7 +202,7 @@ def initial_condition_solitons(Emax,K,M,Ntype):
     K2 = K1 + K
     dt = T/M; dx = L/K
 
-    vv = (1 - v*v)**0.5; vv2 = 1 - v*v; WW = Emax/(2**0.5*vv); coef = -2**0.5*Emax**2*q**2*v/vv*3
+    vv = (1 - v*v)**0.5; vv2 = 1 - v*v; WW = Emax/(2**0.5*vv); coef = -2**0.5*Emax**2*q*v/vv**3
     Kq = ellipk(q); coef2 = 2**0.5*v*Emax/vv
     W = [WW*(k*dx-10) for k in range(K)]
     dn = [float(ellipfun('dn',W[k],q)) for k in range(K)]
@@ -546,7 +546,7 @@ def comparing(L,Emax,n,eps,times,Ntype):
     K = math.floor(L*n); M = math.floor(T*n)
     dx = L/K; dt = T/M
     RG,IG,NG = [],[],[]
-    RD,ID,ND,VD = [],[],[],[]
+    RD,ID,ND = [],[],[]
 
     if Ntype == 1:
         fname = "L="+str(L)+"Emax="+str(Emax)+"N="+str(n)+"Glassey.csv"
@@ -578,24 +578,21 @@ def comparing(L,Emax,n,eps,times,Ntype):
                 ID.append(np.array(row[1:]))
             if row[0] in [2*M+3+i*M//times for i in range(times+1)]:
                 ND.append(np.array(row[1:]))
-            if row[0] in [3*M+4+i*M//times for i in range(times+1)]:
-                VD.append(np.array(row[1:]))
 
     x = np.linspace(0, L, K)
 
     fig = plt.figure()
     axs = []
     for i in range(times):
-        axs.append(fig.add_subplot(times, 4, 4*i+1))
-        axs.append(fig.add_subplot(times, 4, 4*i+2))
-        axs.append(fig.add_subplot(times, 4, 4*i+3))
-        axs.append(fig.add_subplot(times, 4, 4*i+4))
+        axs.append(fig.add_subplot(times, 3, 3*i+1))
+        axs.append(fig.add_subplot(times, 3, 3*i+2))
+        axs.append(fig.add_subplot(times, 3, 3*i+3))
 
     for i in range(times):
         t = (i+1)*M//times
-        tR,tI,tN,_,tV = analytical_solutions(Param,t*dt,K)[:-1]
+        tR,tI,tN = analytical_solutions(Param,t*dt,K)[:3]
 
-        ax = axs[4*i:4*i+4]
+        ax = axs[3*i:3*i+3]
         l1,l2,l3 = "G","D","A"
         if Ntype == 2:
             l1 += "+A"
@@ -611,98 +608,7 @@ def comparing(L,Emax,n,eps,times,Ntype):
         ax[2].plot(x, NG[i+1], label=l1+",N")
         ax[2].plot(x, ND[i+1], label=l2+",N")
         ax[2].plot(x, tN, label=l3+",N")
-        ax[3].plot(x, VD[i+1], label=l2+",V")
-        ax[3].plot(x, tV, label=l3+",V")
-        ax[0].legend(); ax[1].legend(); ax[2].legend(); ax[3].legend()
-    plt.show()
-
-def comparing_first_steps(Emax):
-    ns = [10*(i+1) for i in range(10)]
-    Param = parameters(20,1,Emax,10**(-8))
-    deltas = []
-    errors_G = []
-    errors_D = []
-    for n in ns:
-        K = math.floor(L*n)
-        M = math.floor(T*n)
-        dx = L/K; dt = T/M
-
-        R_now,I_now,N_now,N_next,V_now = initial_condition(Param,K,M,1)[:-1]
-
-        N1_Glassey = N_next
-
-        Ik = np.identity(K); Zk = np.zeros((K,K))
-        Dx = (-2*Ik + np.eye(K,k=1) + np.eye(K,k=K-1) + np.eye(K,k=-1) + np.eye(K,k=-K+1))/dx**2
-        ID = np.linalg.inv(Ik-0.5*dt**2*Dx)
-
-        DR_now = np.dot(Dx,np.array(R_now)); DI_now = np.dot(Dx,np.array(I_now)); DV_now = np.dot(Dx,np.array(V_now))
-
-        dN = 0.5*dt*Dx - 0.25*dt*np.diag(N_now)
-        dR_now = 0.25*dt*np.diag(R_now); dI_now = 0.25*dt*np.diag(I_now)
-
-        F0 = np.array([- R_now[i%K] + 0.5*dt*DI_now[i%K] if i//K == 0
-            else -I_now[i%K] - 0.5*dt*DR_now[i%K] if i//K == 1
-            else -N_now[i%K] - 0.5*dt*DV_now[i%K] if i//K == 2
-            else - V_now[i%K] - 0.5*dt*(N_now[i%K] + R_now[i%K]**2 + I_now[i%K]**2) for i in range(4*K)])
-
-        D = dt*(0.5*Dx - 0.25*np.diag([N_now[k]+N_next[k] for k in range(K)]))
-        A = np.block([[Ik,D],[-D,Ik]])
-        b = np.linalg.solve(A,2*np.array([R_now[i] if i < K else I_now[i-K] for i in range(2*K)]))
-        R_next = -np.array(R_now) + b[:K]; I_next = -np.array(I_now) + b[K:]
-
-        V_next = [-V_now[k]+ 0.5*dt*(N_next[k] + N_now[k] + R_now[k]**2 + R_next[k]**2 + I_now[k]**2 + I_next[k]**2) for k in range(K)]
-        DR_next = np.dot(Dx,np.array(R_next)); DI_next = np.dot(Dx,np.array(I_next)); DV_next = np.dot(Dx,np.array(V_next))
-
-        F = F0 + np.array([R_next[i%K] + 0.5*dt*DI_next[i%K] - 0.25*dt*(I_next[i%K] + I_now[i%K])*(N_next[i%K] + N_now[i%K]) if i//K == 0
-                else I_next[i%K] - 0.5*dt*DR_next[i%K] + 0.25*dt*(R_next[i%K] + R_now[i%K])*(N_next[i%K] + N_now[i%K]) if i//K == 1
-                else N_next[i%K] - 0.5*dt*DV_next[i%K] if i//K == 2
-                else V_next[i%K] - 0.5*dt*(N_next[i%K] + R_next[i%K]**2 + I_next[i%K]**2) for i in range(4*K)])
-        while norm(F,dx)**0.5 >= eps:
-            print(norm(F,dx)**0.5)
-            dNN = dN - 0.25*dt*np.diag(N_next)
-            dR = dt*np.diag(R_next); dI = dt*np.diag(I_next)
-            dRR = 0.25*dR + dR_now; dII = 0.25*dI + dI_now
-            DF = np.block([[Ik,dNN,-dII,Zk],[-dNN,Ik,dRR,Zk],[Zk,Zk,Ik,-0.5*dt*Dx],[-dR,-dI,-0.5*dt*Ik,Ik]])
-            r = np.linalg.solve(DF,F)
-
-            R_next -= r[:K]; I_next -= r[K:2*K]; N_next -= r[2*K:3*K]; V_next -= r[3*K:]
-            DR_next = np.dot(Dx,np.array(R_next)); DI_next = np.dot(Dx,np.array(I_next)); DV_next = np.dot(Dx,np.array(V_next))
-
-            F = F0 + np.array([R_next[i%K] + 0.5*dt*DI_next[i%K] - 0.25*dt*(I_next[i%K] + I_now[i%K])*(N_next[i%K] + N_now[i%K]) if i//K == 0
-                else I_next[i%K] - 0.5*dt*DR_next[i%K] + 0.25*dt*(R_next[i%K] + R_now[i%K])*(N_next[i%K] + N_now[i%K]) if i//K == 1
-                else N_next[i%K] - 0.5*dt*DV_next[i%K] if i//K == 2
-                else V_next[i%K] - 0.5*dt*(N_next[i%K] + R_next[i%K]**2 + I_next[i%K]**2) for i in range(4*K)])
-        N1_DVDM = N_next
-
-        N1_true = analytical_solutions(Param,dt,K)[2]
-
-        deltas.append(dt)
-        errors_G.append(dist(N1_Glassey,N1_true,dx))
-        errors_D.append(dist(N1_DVDM,N1_true,dx))
-    fig = plt.figure()
-    ax0 = fig.add_subplot(1, 3, 1)
-    axLog = fig.add_subplot(1, 3, 2)
-    axWave = fig.add_subplot(1, 3, 3)
-
-    x = np.linspace(0,L,K)
-
-    errors_DLog = [math.log(errors_D[i]) for i in range(len(errors_D))]
-
-    ax0.plot(deltas,errors_G,label="Glassey,Emax="+str(Emax))
-    ax0.plot(deltas,errors_D,label="DVDM,Emax="+str(Emax))
-    ax0.legend()
-    ax0.set_xlabel("Δt=Δx")
-    ax0.set_ylabel("Error of N on t=Δt")
-    axLog.plot(deltas,errors_DLog,label="(log)DVDM,Emax="+str(Emax))
-    axLog.legend()
-    axLog.set_xlabel("Δt=Δx")
-    axLog.set_ylabel("Error of N on t=Δt")
-    axWave.plot(x,N1_Glassey,label="G")
-    axWave.plot(x,N1_DVDM,label="D")
-    axWave.plot(x,N1_true,label="true")
-    axWave.legend()
-    axWave.set_xlabel("x")
-    axWave.set_ylabel("N")
+        ax[0].legend(); ax[1].legend(); ax[2].legend()
     plt.show()
 
 N = 10
@@ -717,9 +623,7 @@ M = math.floor(T*N)
 #print(checking_DVDM(Param,K,M,10**(-5)))
 #print(checking_DVDM(Param,K,M,10**(-8)))
 #initial_condition(Param,K,M)
-comparing(20,1,10,10**(-8),2,1)
-#comparing_first_steps(0.18)
-#comparing_adjusted(20,1.3,10,10**(-8),2)
+comparing(20,0.18,10,10**(-8),2,1)
 
 ###############################################################################
 #収束先の検証

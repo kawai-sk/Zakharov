@@ -100,7 +100,7 @@ def checking_Nt0(Emax,n):
     K = math.floor(L*n); M = math.floor(T*n)
     dx = L/K; dt = T/M
     vv = (1 - v*v)**0.5; vv2 = 1 - v*v; WW = Emax/(2**0.5*vv); Kq = ellipk(q)
-    coef1 = -2**0.5*Emax**3*q**2*v/(vv**3); coef2 = 2**0.5*v*Emax/vv; coef3 = v*Emax**2/vv2
+    coef1 = -2**0.5*Emax**3*q*v/(vv**3); coef2 = 2**0.5*v*Emax/vv; coef3 = v*Emax**2/vv2
     x = [k*dx for k in range(K)]
     W0 = [WW*(k*dx) for k in range(K)]
     W1 = [WW*(k*dx-v*dt) for k in range(K)]
@@ -134,7 +134,7 @@ def checking_Nt0(Emax,n):
     plt.ylabel("")
     plt.show()
 #print(ellipfun('cn',1,0.51))
-#checking_Nt0(1.3,100)
+checking_Nt0(0.18,100)
 
 ###############################################################################
 #初期条件
@@ -295,7 +295,7 @@ def ploting_Nt(Emax,n):
     plt.ylabel("Nt")
     plt.show()
 
-#ploting_Nt(1,200)
+#ploting_Nt(0.18,50)
 
 
 ###############################################################################
