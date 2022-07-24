@@ -60,7 +60,7 @@ def analytical_solutions(Param,t,K):
     L,Emax,v,q,N_0,u,T,phi = Param
     dx = L/K
     vv = (1 - v*v)**0.5; vv2 = 1 - v*v; WW = Emax/(2**0.5*vv); Kq = ellipk(q)
-    coef1 = -2**0.5*Emax**3*q**2*v/vv*3; coef2 = 2**0.5*v*Emax/vv; coef3 = v*Emax**2/vv2
+    coef1 = -2**0.5*Emax**3*q**2*v/vv**3; coef2 = 2**0.5*v*Emax/vv; coef3 = v*Emax**2/vv2
     W = [WW*(k*dx-v*t) for k in range(K)]
     dn = [float(ellipfun('dn',W[k],q)) for k in range(K)]
     F = [Emax*dn[k] for k in range(K)]
@@ -717,7 +717,7 @@ M = math.floor(T*N)
 #print(checking_DVDM(Param,K,M,10**(-5)))
 #print(checking_DVDM(Param,K,M,10**(-8)))
 #initial_condition(Param,K,M)
-#comparing(20,2.1,10,10**(-8),2,3)
+comparing(20,1,10,10**(-8),2,2)
 #comparing_first_steps(0.18)
 #comparing_adjusted(20,1.3,10,10**(-8),2)
 

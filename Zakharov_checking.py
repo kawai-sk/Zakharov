@@ -95,6 +95,46 @@ def checking_analycal(n):
     plt.ylabel("dV")
     plt.show()
 #checking_analycal(100)
+def checking_Nt0(Emax,n):
+    L,Emax,v,q,N_0,u,T,phi = parameters(20,1,Emax,10**(-8))
+    K = math.floor(L*n); M = math.floor(T*n)
+    dx = L/K; dt = T/M
+    vv = (1 - v*v)**0.5; vv2 = 1 - v*v; WW = Emax/(2**0.5*vv); Kq = ellipk(q)
+    coef1 = -2**0.5*Emax**3*q**2*v/(vv**3); coef2 = 2**0.5*v*Emax/vv; coef3 = v*Emax**2/vv2
+    x = [k*dx for k in range(K)]
+    W0 = [WW*(k*dx) for k in range(K)]
+    W1 = [WW*(k*dx-v*dt) for k in range(K)]
+    dn0 = [float(ellipfun('dn',W0[k],q)) for k in range(K)]
+    dn1 = [float(ellipfun('dn',W1[k],q)) for k in range(K)]
+    F0 = [Emax*dn0[k] for k in range(K)]
+    F1 = [Emax*dn1[k] for k in range(K)]
+
+    N0 = [-F0[k]**2/vv2 + N_0 for k in range(K)]
+    N1 = [-F1[k]**2/vv2 + N_0 for k in range(K)]
+    sn0 = [float(ellipfun('sn',W0[k],q)) for k in range(K)]
+    cn0 = [float(ellipfun('cn',W0[k],q)) for k in range(K)]
+
+    Nt0 = [coef1*float(dn0[k]*sn0[k]*cn0[k]) for k in range(K)]
+    mNt = max(Nt0)
+    dN = [(N1[k]-N0[k])/dt for k in range(K)]
+    mdN = max(dN)
+    Ntcoeftrue = [mNt/mdN for k in range(K)]
+    #dN = [(N1[k]-N0[k])/dt for k in range(K+1)]
+    Coefs = [Nt0[k]/dN[k] for k in range(K)]
+
+    #plt.plot(x,Coefs,label="dNdt/Ntbase")
+    #plt.plot(x,Ntcoeftrue,label="coeftrue")
+
+    plt.plot(x,Nt0,label="Nt0")
+    plt.plot(x,dN,label="fd_t(N)")
+    #plt.plot(x,rNt,label="Nt0/max(Nt0)")
+    #plt.plot(x,rdN,label="dN/max(dN)")
+    plt.legend()
+    plt.xlabel("x")
+    plt.ylabel("")
+    plt.show()
+#print(ellipfun('cn',1,0.51))
+checking_Nt0(1.3,100)
 
 ###############################################################################
 #初期条件
@@ -168,7 +208,7 @@ def initial_condition(Param,K,M):
 
     return R0,I0,N0,N10,N1,N12,V0,dV0
 
-def checking_N(Emax):
+def checking_N1(Emax):
     ns = [10*i for i in range(1,11)]
     Param = parameters(20,1,Emax,10**(-8))
     T = Param[-2]
@@ -194,6 +234,23 @@ def checking_N(Emax):
     plt.ylabel("Error of N on t=Δt")
     plt.show()
 
+def ploting_N1(Emax,n):
+    Param = parameters(20,1,Emax,10**(-8))
+    T = Param[-2]
+    K = math.floor(L*n); M = math.floor(T*n)
+    dt = T/M; dx = L/K
+    N10,N1,N12 = initial_condition(Param,K,M)[3:6]
+    N1true = analytical_solutions(Param,dt,K)[2]
+    x = np.linspace(0,L,K)
+    plt.plot(x,N10,label="N11,Emax="+str(Emax))
+    plt.plot(x,N1,label="N12,Emax="+str(Emax))
+    plt.plot(x,N12,label="N13,Emax="+str(Emax))
+    plt.plot(x,N1true,label="N1true,Emax="+str(Emax))
+    plt.legend()
+    plt.xlabel("x")
+    plt.ylabel("N1")
+    plt.show()
+
 def checking_Nt(Emax):
     ns = [10*i for i in range(1,11)]
     Param = parameters(20,1,Emax,10**(-8))
@@ -216,7 +273,29 @@ def checking_Nt(Emax):
     plt.ylabel("Error of Nt")
     plt.show()
 
-checking_Nt(0.18)
+def ploting_Nt(Emax,n):
+    Param = parameters(20,1,Emax,10**(-8))
+    T = Param[-2]
+    K = math.floor(L*n); M = math.floor(T*n)
+    dt = T/M; dx = L/K
+    N0,Nt0 = analytical_solutions(Param,0,K)[2:4]
+    N1 = initial_condition(Param,K,M)[5]
+    N1true = analytical_solutions(Param,dt,K)[2]
+    dN = [(N1[k]-N0[k])/dt for k in range(K)]
+    dNtrue = [(N1true[k]-N0[k])/dt for k in range(K)]
+    print(dist(Nt0,dN,dx),dist(Nt0,dNtrue,dx))
+    x = np.linspace(0,L,K)
+    plt.plot(x,Nt0,label="Nt,Emax="+str(Emax))
+    plt.plot(x,dN,label="dN,Emax="+str(Emax))
+    plt.plot(x,dNtrue,label="dNtrue,Emax="+str(Emax))
+    plt.plot(x,N0,label="N0,Emax="+str(Emax))
+    plt.plot(x,N1,label="N1,Emax="+str(Emax))
+    plt.plot(x,N1true,label="N1true,Emax="+str(Emax))
+    plt.legend()
+    plt.ylabel("Nt")
+    plt.show()
+
+#ploting_Nt(1,200)
 
 
 ###############################################################################
