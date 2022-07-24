@@ -717,7 +717,7 @@ M = math.floor(T*N)
 #print(checking_DVDM(Param,K,M,10**(-5)))
 #print(checking_DVDM(Param,K,M,10**(-8)))
 #initial_condition(Param,K,M)
-comparing(20,1,10,10**(-8),2,2)
+comparing(20,1,10,10**(-8),2,1)
 #comparing_first_steps(0.18)
 #comparing_adjusted(20,1.3,10,10**(-8),2)
 

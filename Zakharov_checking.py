@@ -134,7 +134,7 @@ def checking_Nt0(Emax,n):
     plt.ylabel("")
     plt.show()
 #print(ellipfun('cn',1,0.51))
-checking_Nt0(1.3,100)
+#checking_Nt0(1.3,100)
 
 ###############################################################################
 #初期条件

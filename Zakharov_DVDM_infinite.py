@@ -28,7 +28,7 @@ def analytical_solutions_infinite(Param2,t,K,a):
     Ltent,T,Emax,v,u,phi = Param2
     dx = Ltent/K
     vv = (1 - v*v)**0.5; vv2 = 1 - v*v; WW = Emax/(2**0.5*vv)
-    coef1 = 2**0.5*v*Emax/vv; coef2 = Emax**2*v/vv2; coef3 = -2**0.5*Emax**3*v/vv*3
+    coef1 = 2**0.5*v*Emax/vv; coef2 = Emax**2*v/vv2; coef3 = -2**0.5*Emax**3*v/vv**3
 
     W = np.array([WW*((k-a*K)*dx-v*t) for k in range((2*a+1)*K)])
     F = Emax/np.cosh(W)
