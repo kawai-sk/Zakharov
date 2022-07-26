@@ -200,7 +200,7 @@ def initial_condition_solitons(Emax,K,M,eps,Ntype):
     K2 = K1 + K
     dt = T/M; dx = L/K
 
-    vv = (1 - v*v)**0.5; vv2 = 1 - v*v; WW = Emax/(2**0.5*vv); coef = -2**0.5*Emax**2*q*v/vv**3
+    vv = (1 - v*v)**0.5; vv2 = 1 - v*v; WW = Emax/(2**0.5*vv); coef = -2**0.5*Emax**3*q*v/vv**3
     Kq = ellipk(q); coef2 = 2**0.5*v*Emax/vv
     W = [WW*(k*dx-10) for k in range(K)]
     dn = [float(ellipfun('dn',W[k],q)) for k in range(K)]
@@ -221,10 +221,10 @@ def initial_condition_solitons(Emax,K,M,eps,Ntype):
     Vbase1 = [Vbase1[k] - Vbase1[0] for k in range(K)]
     Vbase2 = [-Vbase1[k] for k in range(K)]
 
-    R0 = [0 for k in range(3*K)]+Rbase1+Rbase2+[0 for k in range(3*K)]
-    I0 = [0 for k in range(3*K)]+Ibase1+Ibase2+[0 for k in range(3*K)]
-    N0 = [N_0 for k in range(3*K)]+Nbase+Nbase+[N_0 for k in range(3*K)]
-    V0 = [0 for k in range(3*K)]+Vbase1+Vbase2+[0 for k in range(3*K)]
+    R0 = [Rbase1[0] for k in range(3*K)]+Rbase1+Rbase2+[Rbase2[-1] for k in range(3*K)]
+    I0 = [Ibase1[0] for k in range(3*K)]+Ibase1+Ibase2+[Ibase2[-1] for k in range(3*K)]
+    N0 = [Nbase[0] for k in range(3*K)]+Nbase+Nbase+[Nbase[-1] for k in range(3*K)]
+    V0 = [Vbase1[0] for k in range(3*K)]+Vbase1+Vbase2+[Vbase2[-1] for k in range(3*K)]
 
     #Taylor
     if Ntype == 1 or Ntype == 3:
@@ -240,7 +240,7 @@ def initial_condition_solitons(Emax,K,M,eps,Ntype):
         dI2 = CD(Ibase2,dx); d2I2 = SCD(Ibase2,dx)
         N1b2 = [Nbase[k] + dt*Ntbase2[k] + dt**2*(0.5*d2N[k] + dR2[k]**2 + dI2[k]**2 + Rbase2[k]*d2R2[k] + Ibase2[k]*d2I2[k]) for k in range(K)]
 
-        N1 = [N_0 for k in range(3*K)]+N1b1+N1b2+[N_0 for k in range(3*K)]
+        N1 = [N1b1[0] for k in range(3*K)]+N1b1+N1b2+[N1b2[-1] for k in range(3*K)]
 
     #1ソリトンでの解析解が既知で，2ソリトンでも(t=Δtでは)正しいと仮定
     if Ntype == 2:
@@ -254,10 +254,9 @@ def initial_condition_solitons(Emax,K,M,eps,Ntype):
         Ndtbase1 = [-Fdt1[k]**2/vv2 + N_0 for k in range(len(W))]
         Ndtbase2 = [-Fdt2[k]**2/vv2 + N_0 for k in range(len(W))]
 
-        N1 = [N_0 for k in range(3*K)]+Ndtbase1+Ndtbase2+[N_0 for k in range(3*K)]
+        N1 = [Ndtbase1[0] for k in range(3*K)]+Ndtbase1+Ndtbase2+[Ndtbase2[-1] for k in range(3*K)]
 
     if Ntype == 3:
-        print(1)
         R_now,I_now,N_now,N_next,V_now = R0,I0,N0,N1,V0
 
         K *= 8
@@ -935,4 +934,74 @@ def comparing_solitons(Emax,n,times):
         ax[0].legend(); ax[1].legend(); ax[2].legend(); ax[3].legend()
     plt.show()
 
-comparing_solitons(0.18,20,6)
+def comparing_solitons_Glassey(Emax,n,times):
+    Param = parameters(20,1,Emax,10**(-8))
+    T = Param[-2]
+    K = math.floor(20*n); M = math.floor(T*n)
+    dx = 20/K; dt = T/M
+
+    RG,IG,NG = [],[],[]
+    RGD,IGD,NGD = [],[],[]
+
+    fname = "Emax="+str(Emax)+"N="+str(n)+"GlasseyS.csv"
+
+    if not os.path.isfile(fname):
+        time,Rs,Is,Ns = Glassey(Param,K,M,1,2)
+        pd.DataFrame(time+Rs+Is+Ns).to_csv(fname)
+    with open(fname) as f:
+        for row in csv.reader(f, quoting=csv.QUOTE_NONNUMERIC):
+            if row[0] in [i*M//times+1 for i in range(times+1)]:
+                RG.append(np.array(row[1:]))
+            if row[0] in [M+2+i*M//times for i in range(times+1)]:
+                IG.append(np.array(row[1:]))
+            if row[0] in [2*M+3+i*M//times for i in range(times+1)]:
+                NG.append(np.array(row[1:]))
+
+    fname = "Emax="+str(Emax)+"N="+str(n)+"GlasseySD.csv"
+    if not os.path.isfile(fname):
+        time,Rs,Is,Ns = Glassey(Param,K,M,3,2)
+        pd.DataFrame(time+Rs+Is+Ns).to_csv(fname)
+    with open(fname) as f:
+        for row in csv.reader(f, quoting=csv.QUOTE_NONNUMERIC):
+            if row[0] in [i*M//times+1 for i in range(times+1)]:
+                RGD.append(np.array(row[1:]))
+            if row[0] in [M+2+i*M//times for i in range(times+1)]:
+                IGD.append(np.array(row[1:]))
+            if row[0] in [2*M+3+i*M//times for i in range(times+1)]:
+                NGD.append(np.array(row[1:]))
+
+    x = np.linspace(0, 160, 8*K)
+
+    fig = plt.figure()
+    axs = []
+    for i in range(times+1):
+        axs.append(fig.add_subplot(times+1, 4, 4*i+1))
+        axs.append(fig.add_subplot(times+1, 4, 4*i+2))
+        axs.append(fig.add_subplot(times+1, 4, 4*i+3))
+        axs.append(fig.add_subplot(times+1, 4, 4*i+4))
+
+    l1 = "G"; l2 = "G+D"
+
+    for i in range(times+1):
+        ax = axs[4*i:4*i+4]
+
+        EG = [(RG[i][k]**2+IG[i][k]**2)**0.5 for k in range(len(RG[i]))]
+        EGD = [(RGD[i][k]**2+IGD[i][k]**2)**0.5 for k in range(len(RG[i]))]
+
+        ax[0].plot(x, RG[i], label=l1)
+        ax[0].plot(x, RGD[i], label=l2)
+        ax[0].set_ylabel("ReE")
+        ax[1].plot(x, IG[i], label=l1)
+        ax[1].plot(x, IGD[i], label=l2)
+        ax[1].set_ylabel("ImE")
+        ax[2].plot(x, EG, label=l1)
+        ax[2].plot(x, EGD, label=l2)
+        ax[2].set_ylabel("|E|")
+        ax[3].plot(x, NG[i], label=l1)
+        ax[3].plot(x, NGD[i], label=l2)
+        ax[3].set_ylabel("N")
+        ax[0].legend(); ax[1].legend(); ax[2].legend(); ax[3].legend()
+    plt.show()
+
+#comparing_solitons(1.3,10,6)
+comparing_solitons(1.3,10,6)
