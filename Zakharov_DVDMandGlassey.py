@@ -50,9 +50,7 @@ def parameters(L,m,Emax,eps):
 # Emax < 0.17281841279256 を目安に scipy.special.ellipk(q) が q=0 となり機能しなくなる
 # Emax > 2.173403970708827 を目安に scipy.special.ellipkm1(1-q) が q=1 となり機能しなくなる
 # Emax > 4/3 を目安に scipy.special.ellipk(q) が十分精度を確保できなくなる
-L = 20; Emax = 2.1; m = 1; eps = 10**(-9)
-Param = parameters(L,m,Emax,eps)
-T = Param[-2]
+#parameters(20,1,1,10**(-8))
 
 ###############################################################################
 
@@ -127,7 +125,7 @@ def dist(a,b,dx):
     return dis**0.5
 
 #Taylorで R,I,N の m=1 を求める
-def initial_condition(Param,K,M,Ntype):
+def initial_condition(Param,K,M,eps,Ntype):
     L,Emax,v,q,N_0,u,T,phi = Param
     dx = L/K; dt = T/M
 
@@ -194,7 +192,7 @@ def initial_condition(Param,K,M,Ntype):
 
     return R0,I0,N0,N1,V0,dV0
 
-def initial_condition_solitons(Emax,K,M,Ntype):
+def initial_condition_solitons(Emax,K,M,eps,Ntype):
     L,Emax,v,q,N_0,u,T,phi = parameters(20,1,Emax,10**(-8))
     K0 = 8*K
     Khalf = math.floor(0.5*K)
@@ -259,6 +257,7 @@ def initial_condition_solitons(Emax,K,M,Ntype):
         N1 = [N_0 for k in range(3*K)]+Ndtbase1+Ndtbase2+[N_0 for k in range(3*K)]
 
     if Ntype == 3:
+        print(1)
         R_now,I_now,N_now,N_next,V_now = R0,I0,N0,N1,V0
 
         K *= 8
@@ -290,7 +289,6 @@ def initial_condition_solitons(Emax,K,M,Ntype):
                 else N_next[i%K] - 0.5*dt*DV_next[i%K] if i//K == 2
                 else V_next[i%K] - 0.5*dt*(N_next[i%K] + R_next[i%K]**2 + I_next[i%K]**2) for i in range(4*K)])
         while norm(F,dx)**0.5 >= eps:
-            print(norm(F,dx)**0.5)
             dNN = dN - 0.25*dt*np.diag(N_next)
             dR = dt*np.diag(R_next); dI = dt*np.diag(I_next)
             dRR = 0.25*dR + dR_now; dII = 0.25*dI + dI_now
@@ -308,22 +306,22 @@ def initial_condition_solitons(Emax,K,M,Ntype):
 
     return R0,I0,N0,N1,V0
 
-#initial_condition_solitons(1,K,M)
 
 ###############################################################################
 #スキーム本体
 
 # Glassey スキーム
 def Glassey(Param,K,M,Ntype,Stype):
+    L = Param[0]; T = Param[-2]
     start = time.perf_counter()
     dx = L/K; dt = T/M #print(dt,dx)
 
     # 数値解の記録
     Rs = []; Is = []; Ns = []
     if Stype == 1:
-        R_now,I_now,N_now,N_next = initial_condition(Param,K,M,Ntype)[:4]
+        R_now,I_now,N_now,N_next = initial_condition(Param,K,M,10**(-8),Ntype)[:4]
     if Stype == 2:
-        R_now,I_now,N_now,N_next = initial_condition_solitons(Param[1],K,M,Ntype)[:4]
+        R_now,I_now,N_now,N_next = initial_condition_solitons(Param[1],K,M,10**(-8),Ntype)[:4]
         K *= 8
     Rs.append(R_now); Is.append(I_now); Ns.append(N_now); Ns.append(N_next)
 
@@ -389,22 +387,64 @@ def Glassey(Param,K,M,Ntype,Stype):
 
     return [[str(end-start)]+[0 for i in range(len(Rs[0])-1)]],Rs,Is,Ns
 
-def checking_Glassey(Param,K,M,Ntype):
-    dx = L/K; dt = T/M #print(dt,dx)
-    Rs,Is,Ns = Glassey(Param,K,M,Ntype,1)[1:]
+def checking_Glassey(L,Emax,n,Ntype):
+    Param = parameters(L,1,Emax,eps)
+    T = Param[-2]
+    K = math.floor(L*n); M = math.floor(T*n)
+    dx = L/K; dt = T/M
+
+    Rs,Is,Ns = [],[],[]
+
+    if Ntype == 1:
+        fname = "L="+str(L)+"Emax="+str(Emax)+"N="+str(n)+"Glassey.csv"
+    if Ntype == 2:
+        fname = "L="+str(L)+"Emax="+str(Emax)+"N="+str(n)+"GlasseyA.csv"
+    if Ntype == 3:
+        fname = "L="+str(L)+"Emax="+str(Emax)+"N="+str(n)+"GlasseyD.csv"
+
+    if not os.path.isfile(fname):
+        time,Rs,Is,Ns = Glassey(Param,K,M,Ntype,1)
+        pd.DataFrame(time+Rs+Is+Ns).to_csv(fname)
+    with open(fname) as f:
+        for row in csv.reader(f, quoting=csv.QUOTE_NONNUMERIC):
+            if row[0] in [i+1 for i in range(M+1)]:
+                Rs.append(np.array(row[1:]))
+            if row[0] in [M+2+i for i in range(M+1)]:
+                Is.append(np.array(row[1:]))
+            if row[0] in [2*M+3+i for i in range(M+1)]:
+                Ns.append(np.array(row[1:]))
+
+    tRs,tIs,tNs,tVs = [],[],[],[]
+    fname = "L="+str(L)+"Emax="+str(Emax)+"N="+str(n)+"Analytic.csv"
+
+    if os.path.isfile(fname):
+        with open(fname) as f:
+            for row in csv.reader(f, quoting=csv.QUOTE_NONNUMERIC):
+                if row[0] in [i for i in range(M+1)]:
+                    tRs.append(np.array(row[1:]))
+                if row[0] in [M+1+i for i in range(M+1)]:
+                    tIs.append(np.array(row[1:]))
+                if row[0] in [2*M+2+i for i in range(M+1)]:
+                    tNs.append(np.array(row[1:]))
+    else:
+        for i in range(M+1):
+            if i%10 == 0:
+                print(i,M)
+            tR,tI,tN,_,tV,_ = analytical_solutions(Param,i*dt,K)
+            tRs.append(tR); tIs.append(tI); tNs.append(tN); tVs.append(tV)
+        pd.DataFrame(tRs+tIs+tNs+tVs).to_csv(fname)
+
     eEs = [];eNs = []
     rEs = [];rNs = []
 
     RANGE = [i for i in range(len(Rs))]
     #RANGE = [len(Rs)-1] # 最終時刻での誤差だけ知りたいとき
     for i in RANGE:
-        tR,tI,tN = analytical_solutions(Param,i*dt,K)[:3]
+        tnorm = (norm(tRs[i],dx) + norm(tIs[i],dx))**0.5
 
-        tnorm = (norm(tR,dx) + norm(tI,dx))**0.5
-
-        eEs.append((dist(Rs[i],tR,dx)**2+dist(Is[i],tI,dx)**2)**0.5); eNs.append(dist(Ns[i],tN,dx))
-        print(T*i/M,eEs[-1],eNs[-1])
-        rEs.append(eEs[i]/tnorm); rNs.append(eNs[i]/norm(tN,dx)**2)
+        eEs.append((dist(Rs[i],tRs[i],dx)**2+dist(Is[i],tIs[i],dx)**2)**0.5); eNs.append(dist(Ns[i],tNs[i],dx))
+        #print(T*i/M,eEs[-1],eNs[-1])
+        rEs.append(eEs[i]/tnorm); rNs.append(eNs[i]/norm(tNs[i],dx)**2)
     print("各要素の最大誤差:",max(eEs),max(eNs))
     print("各要素の最大誤差比:",max(rEs),max(rNs))
     for i in range(4):
@@ -415,6 +455,7 @@ def checking_Glassey(Param,K,M,Ntype):
 # DVDMスキーム本体
 # Newton法の初期値をGlasseyで求める
 def DVDM_Glassey(Param,K,M,eps,Stype):
+    L = Param[0]; T = Param[-2]
     start = time.perf_counter()
     dx = L/K; dt = T/M #print(dt,dx)
 
@@ -423,12 +464,12 @@ def DVDM_Glassey(Param,K,M,eps,Stype):
     if Stype == 1:
         R_now,I_now,N_now,N_next,V_now = initial_condition(Param,K,M,1)[:-1]
     if Stype == 2:
-        R_now,I_now,N_now,N_next,V_now = initial_condition_solitons(Param[1],K,M,1)
+        R_now,I_now,N_now,N_next,V_now = initial_condition_solitons(Param[1],K,M,eps,1)
         K *= 8
     Rs.append(R_now); Is.append(I_now); Ns.append(N_now); Vs.append(V_now)
 
     m = 0
-
+    print(1)
     Ik = np.identity(K); Zk = np.zeros((K,K))
     Dx = (-2*Ik + np.eye(K,k=1) + np.eye(K,k=K-1) + np.eye(K,k=-1) + np.eye(K,k=-K+1))/dx**2
     ID = np.linalg.inv(Ik-0.5*dt**2*Dx)
@@ -517,21 +558,62 @@ def DVDM_Glassey(Param,K,M,eps,Stype):
             plt.show()
     return [[str(end-start)]+[0 for i in range(len(Rs[0])-1)]],Rs,Is,Ns,Vs
 
-def checking_DVDM(Param,K,M,eps):
-    dx = L/K; dt = T/M #print(dt,dx)
-    Rs,Is,Ns,Vs = DVDM_Glassey(Param,K,M,eps,1)[1:]
+def checking_DVDM(L,Emax,n,eps):
+    Param = parameters(L,1,Emax,eps)
+    T = Param[-2]
+    K = math.floor(L*n); M = math.floor(T*n)
+    dx = L/K; dt = T/M
+
+    Rs,Is,Ns,Vs = [],[],[],[]
+    fname = "L="+str(L)+"Emax="+str(Emax)+"N="+str(n)+"DVDM.csv"
+    if not os.path.isfile(fname):
+        time,Rs,Ns,Is,Vs = DVDM_Glassey(Param,K,M,eps,1)
+        pd.DataFrame(time+Rs+Is+Ns+Vs).to_csv(fname)
+    with open(fname) as f:
+        for row in csv.reader(f, quoting=csv.QUOTE_NONNUMERIC):
+            if row[0] in [i+1 for i in range(M+1)]:
+                Rs.append(np.array(row[1:]))
+            if row[0] in [M+2+i for i in range(M+1)]:
+                Is.append(np.array(row[1:]))
+            if row[0] in [2*M+3+i for i in range(M+1)]:
+                Ns.append(np.array(row[1:]))
+            if row[0] in [3*M+4+i for i in range(M+1)]:
+                Vs.append(np.array(row[1:]))
+
+    tRs,tIs,tNs,tVs = [],[],[],[]
+    fname = "L="+str(L)+"Emax="+str(Emax)+"N="+str(n)+"Analytic.csv"
+
+    if not os.path.isfile(fname):
+        for i in range(M+1):
+            if i%10 == 0:
+                print(i,M)
+            tR,tI,tN,_,tV,_ = analytical_solutions(Param,i*dt,K)
+            tRs.append(tR); tIs.append(tI); tNs.append(tN); tVs.append(tV)
+        pd.DataFrame(tRs+tIs+tNs+tVs).to_csv(fname)
+    else:
+        with open(fname) as f:
+            for row in csv.reader(f, quoting=csv.QUOTE_NONNUMERIC):
+                if row[0] in [i for i in range(M+1)]:
+                    tRs.append(np.array(row[1:]))
+                if row[0] in [M+1+i for i in range(M+1)]:
+                    tIs.append(np.array(row[1:]))
+                if row[0] in [2*M+2+i for i in range(M+1)]:
+                    tNs.append(np.array(row[1:]))
+                if row[0] in [3*M+3+i for i in range(M+1)]:
+                    tVs.append(np.array(row[1:]))
+
     eEs = []; eNs = []; eVs = []
-    rEs = []; rNs = []; eNs = []
+    rEs = []; rNs = []; rVs = []
 
     RANGE = [i for i in range(len(Rs))]
     #RANGE = [len(Rs)-1] # 最終時刻での誤差だけ知りたいとき
     for i in RANGE:
-        tR,tI,tN,_,_,tV = analytical_solutions(Param,i*dt,K)
+        tnorm = (norm(tRs[i],dx) + norm(tIs[i],dx))**0.5
 
-        tnorm = (norm(tR,dx) + norm(tI,dx))**0.5
-
-        eEs.append((dist(Rs[i],tR,dx)**2+dist(Is[i],tI,dx)**2)**0.5); eNs.append(dist(Ns[i],tN,dx)); eVs.append(dist(Vs[i],tV,dx))
-        rEs.append(eEs[i]/tnorm); rNs.append(eNs[i]/norm(tN,dx)**2); rVs.append(eVs[i]/norm(tV,dx)**2)
+        eEs.append((dist(Rs[i],tRs[i],dx)**2+dist(Is[i],tIs[i],dx)**2)**0.5); eNs.append(dist(Ns[i],tNs[i],dx)); eVs.append(dist(Vs[i],tVs[i],dx))
+        rEs.append(eEs[i]/tnorm); rNs.append(eNs[i]/norm(tNs[i],dx)**2); rVs.append(eVs[i]/norm(tVs[i],dx)**2)
+        if i%10 == 0:
+            print(i,M)
     print("各要素の最大誤差:",max(eEs),max(eNs),max(eVs))
     print("各要素の最大誤差比:",max(rEs),max(rNs),max(rVs))
     for i in range(4):
@@ -540,31 +622,44 @@ def checking_DVDM(Param,K,M,eps):
     return (dx**2 + dt**2)**0.5,eEs,eNs,eVs
 
 # Glassey,DVDM,解析解を T/3 ごとに比較
-def comparing(L,Emax,n,eps,times,Ntype):
+def comparing(L,Emax,n,eps,times):
     Param = parameters(L,1,Emax,eps)
     T = Param[-2]
     K = math.floor(L*n); M = math.floor(T*n)
     dx = L/K; dt = T/M
     RG,IG,NG = [],[],[]
+    RGD,IGD,NGD = [],[],[]
     RD,ID,ND = [],[],[]
+    Rindex = [i*M//times+1 for i in range(times+1)]
+    Iindex = [M+2+i*M//times for i in range(times+1)]
+    Nindex = [2*M+3+i*M//times for i in range(times+1)]
 
-    if Ntype == 1:
-        fname = "L="+str(L)+"Emax="+str(Emax)+"N="+str(n)+"Glassey.csv"
-    if Ntype == 2:
-        fname = "L="+str(L)+"Emax="+str(Emax)+"N="+str(n)+"GlasseyA.csv"
-    if Ntype == 3:
-        fname = "L="+str(L)+"Emax="+str(Emax)+"N="+str(n)+"GlasseyD.csv"
+    fname = "L="+str(L)+"Emax="+str(Emax)+"N="+str(n)+"Glassey.csv"
+
     if not os.path.isfile(fname):
-        time,Rs,Is,Ns = Glassey(Param,K,M,Ntype,1)
+        time,Rs,Is,Ns = Glassey(Param,K,M,1,1)
         pd.DataFrame(time+Rs+Is+Ns).to_csv(fname)
     with open(fname) as f:
         for row in csv.reader(f, quoting=csv.QUOTE_NONNUMERIC):
-            if row[0] in [i*M//times+1 for i in range(times+1)]:
+            if row[0] in Rindex:
                 RG.append(np.array(row[1:]))
-            if row[0] in [M+2+i*M//times for i in range(times+1)]:
+            if row[0] in Iindex:
                 IG.append(np.array(row[1:]))
-            if row[0] in [2*M+3+i*M//times for i in range(times+1)]:
+            if row[0] in Vindex:
                 NG.append(np.array(row[1:]))
+
+    fname = "L="+str(L)+"Emax="+str(Emax)+"N="+str(n)+"GlasseyD.csv"
+    if not os.path.isfile(fname):
+        time,Rs,Is,Ns = Glassey(Param,K,M,3,1)
+        pd.DataFrame(time+Rs+Is+Ns).to_csv(fname)
+    with open(fname) as f:
+        for row in csv.reader(f, quoting=csv.QUOTE_NONNUMERIC):
+            if row[0] in Rindex:
+                RGD.append(np.array(row[1:]))
+            if row[0] in Iindex:
+                IGD.append(np.array(row[1:]))
+            if row[0] in Nindex:
+                NGD.append(np.array(row[1:]))
 
     fname = "L="+str(L)+"Emax="+str(Emax)+"N="+str(n)+"DVDM.csv"
     if not os.path.isfile(fname):
@@ -572,11 +667,11 @@ def comparing(L,Emax,n,eps,times,Ntype):
         pd.DataFrame(time+Rs+Ns+Is+Vs).to_csv(fname)
     with open(fname) as f:
         for row in csv.reader(f, quoting=csv.QUOTE_NONNUMERIC):
-            if row[0] in [i*M//times+1 for i in range(times+1)]:
+            if row[0] in Rindex:
                 RD.append(np.array(row[1:]))
-            if row[0] in [M+2+i*M//times for i in range(times+1)]:
+            if row[0] in Iindex:
                 ID.append(np.array(row[1:]))
-            if row[0] in [2*M+3+i*M//times for i in range(times+1)]:
+            if row[0] in Nindex:
                 ND.append(np.array(row[1:]))
 
     x = np.linspace(0, L, K)
@@ -593,37 +688,29 @@ def comparing(L,Emax,n,eps,times,Ntype):
         tR,tI,tN = analytical_solutions(Param,t*dt,K)[:3]
 
         ax = axs[3*i:3*i+3]
-        l1,l2,l3 = "G","D","A"
-        if Ntype == 2:
-            l1 += "+A"
-        if Ntype == 3:
-            l1 += "+D"
+        l11,l12,l2,l3 = "G","G+D","D","A"
 
-        ax[0].plot(x, RG[i+1], label=l1+",ReE")
-        ax[0].plot(x, RD[i+1], label=l2+",ReE")
-        ax[0].plot(x, tR, label=l3+",ReE")
-        ax[1].plot(x, IG[i+1], label=l1+",ImE")
-        ax[1].plot(x, ID[i+1], label=l2+",ImE")
-        ax[1].plot(x, tI, label=l3+",ImE")
-        ax[2].plot(x, NG[i+1], label=l1+",N")
-        ax[2].plot(x, ND[i+1], label=l2+",N")
-        ax[2].plot(x, tN, label=l3+",N")
+        ax[0].plot(x, RG[i+1], label=l11)
+        ax[0].plot(x, RGD[i+1], label=l12)
+        ax[0].plot(x, RD[i+1], label=l2)
+        ax[0].plot(x, tR, label=l3)
+        ax[0].set_ylabel("ReE")
+        ax[1].plot(x, IG[i+1], label=l11)
+        ax[1].plot(x, IGD[i+1], label=l12)
+        ax[1].plot(x, ID[i+1], label=l2)
+        ax[1].plot(x, tI, label=l3)
+        ax[1].set_ylabel("ImE")
+        ax[2].plot(x, NG[i+1], label=l11)
+        ax[2].plot(x, NGD[i+1], label=l12)
+        ax[2].plot(x, ND[i+1], label=l2)
+        ax[2].plot(x, tN, label=l3)
+        ax[2].set_ylabel("N")
         ax[0].legend(); ax[1].legend(); ax[2].legend()
     plt.show()
 
-N = 10
-K = math.floor(L*N)
-M = math.floor(T*N)
-
-#print("L=",L,"Emax=",Emax)
-#print("N=",N,"dt=",T/M,"dx=",L/K)
-#print(checking_Glassey(Param,K,M))
-#Glassey(Param,K,M)
-#DVDM_Glassey(Param,K,M,10**(-5))
-#print(checking_DVDM(Param,K,M,10**(-5)))
-#print(checking_DVDM(Param,K,M,10**(-8)))
-#initial_condition(Param,K,M)
-comparing(20,0.18,10,10**(-8),2,1)
+#print(checking_Glassey(20,0.18,20,1))
+#print(checking_DVDM(20,0.18,20,10**(-8)))
+#comparing(20,0.18,20,10**(-8),2)
 
 ###############################################################################
 #収束先の検証
@@ -760,23 +847,20 @@ def conv_nsDVDM(L,Emax,n):
 ###############################################################################
 #2ソリトン衝突
 
-def comparing_solitons(Emax,n,times,Ntype):
+def comparing_solitons(Emax,n,times):
     Param = parameters(20,1,Emax,10**(-8))
     T = Param[-2]
     K = math.floor(20*n); M = math.floor(T*n)
     dx = 20/K; dt = T/M
 
     RG,IG,NG = [],[],[]
+    RGD,IGD,NGD = [],[],[]
     RD,ID,ND = [],[],[]
 
-    if Ntype == 1:
-        fname = "Emax="+str(Emax)+"N="+str(n)+"GlasseyS.csv"
-    if Ntype == 2:
-        fname = "Emax="+str(Emax)+"N="+str(n)+"GlasseySA.csv"
-    if Ntype == 3:
-        fname = "Emax="+str(Emax)+"N="+str(n)+"GlasseySD.csv"
+    fname = "Emax="+str(Emax)+"N="+str(n)+"GlasseyS.csv"
+
     if not os.path.isfile(fname):
-        time,Rs,Is,Ns = Glassey(Param,K,M,Ntype,2)
+        time,Rs,Is,Ns = Glassey(Param,K,M,1,2)
         pd.DataFrame(time+Rs+Is+Ns).to_csv(fname)
     with open(fname) as f:
         for row in csv.reader(f, quoting=csv.QUOTE_NONNUMERIC):
@@ -786,6 +870,19 @@ def comparing_solitons(Emax,n,times,Ntype):
                 IG.append(np.array(row[1:]))
             if row[0] in [2*M+3+i*M//times for i in range(times+1)]:
                 NG.append(np.array(row[1:]))
+
+    fname = "Emax="+str(Emax)+"N="+str(n)+"GlasseySD.csv"
+    if not os.path.isfile(fname):
+        time,Rs,Is,Ns = Glassey(Param,K,M,3,2)
+        pd.DataFrame(time+Rs+Is+Ns).to_csv(fname)
+    with open(fname) as f:
+        for row in csv.reader(f, quoting=csv.QUOTE_NONNUMERIC):
+            if row[0] in [i*M//times+1 for i in range(times+1)]:
+                RGD.append(np.array(row[1:]))
+            if row[0] in [M+2+i*M//times for i in range(times+1)]:
+                IGD.append(np.array(row[1:]))
+            if row[0] in [2*M+3+i*M//times for i in range(times+1)]:
+                NGD.append(np.array(row[1:]))
 
     fname = "Emax="+str(Emax)+"N="+str(n)+"DVDMS.csv"
     if not os.path.isfile(fname):
@@ -810,27 +907,32 @@ def comparing_solitons(Emax,n,times,Ntype):
         axs.append(fig.add_subplot(times+1, 4, 4*i+3))
         axs.append(fig.add_subplot(times+1, 4, 4*i+4))
 
+    l1 = "G"; l2 = "G+D"; l3 = "D"
+
     for i in range(times+1):
         ax = axs[4*i:4*i+4]
 
-        l = "G"
-        if Ntype == 2:
-            l += "+A"
-        if Ntype == 3:
-            l += "+D"
-
         EG = [(RG[i][k]**2+IG[i][k]**2)**0.5 for k in range(len(RG[i]))]
+        EGD = [(RGD[i][k]**2+IGD[i][k]**2)**0.5 for k in range(len(RG[i]))]
         ED = [(RD[i][k]**2+ID[i][k]**2)**0.5 for k in range(len(RG[i]))]
 
-        ax[0].plot(x, RG[i], label=l+",ReE")
-        ax[0].plot(x, RD[i], label="D"+",ReE")
-        ax[1].plot(x, IG[i], label=l+",ImE")
-        ax[1].plot(x, ID[i], label="D"+",ImE")
-        ax[2].plot(x, EG, label=l+",|E|")
-        ax[2].plot(x, ED, label="D"+",|E|")
-        ax[3].plot(x, NG[i], label=l+",N")
-        ax[3].plot(x, ND[i], label="D"+",N")
+        ax[0].plot(x, RG[i], label=l1)
+        ax[0].plot(x, RGD[i], label=l2)
+        ax[0].plot(x, RD[i], label=l3)
+        ax[0].set_ylabel("ReE")
+        ax[1].plot(x, IG[i], label=l1)
+        ax[1].plot(x, IGD[i], label=l2)
+        ax[1].plot(x, ID[i], label=l3)
+        ax[1].set_ylabel("ImE")
+        ax[2].plot(x, EG, label=l1)
+        ax[2].plot(x, EGD, label=l2)
+        ax[2].plot(x, ED, label=l3)
+        ax[2].set_ylabel("|E|")
+        ax[3].plot(x, NG[i], label=l1)
+        ax[3].plot(x, NGD[i], label=l2)
+        ax[3].plot(x, ND[i], label=l3)
+        ax[3].set_ylabel("N")
         ax[0].legend(); ax[1].legend(); ax[2].legend(); ax[3].legend()
     plt.show()
 
-#comparing_solitons(0.18,10,6,3)
+comparing_solitons(0.18,20,6)
