@@ -434,7 +434,7 @@ def initial_condition_solitons(Emax,K,M,eps,Ntype,Vtype):
         V0 = dx**2 * np.dot(DDI,dN)
         V0 = [0]+[V0[i] for i in range(8*K-1)]
 
-    WantToPlot = True
+    WantToPlot = False
     if WantToPlot:
         x = np.linspace(0,160,8*K)
         plt.plot(x,N0,label="N,t=0")
@@ -512,9 +512,9 @@ def initial_condition_solitons(Emax,K,M,eps,Ntype,Vtype):
 
     return R0,I0,N0,N1,V0
 
-#Emax = 0.1; n = 10; Param = parameters(20,1,Emax,10**(-8)); T = Param[-2]; K = math.floor(20*n); M = math.floor(T*n)
+Emax = 0.5; n = 10; Param = parameters(20,1,Emax,10**(-8)); T = Param[-2]; K = math.floor(20*n); M = math.floor(T*n)
 #initial_condition(Param,K,M,10**(-8),1)
-#initial_condition_solitons(Emax,K,M,10**(-8),1,3)
+#initial_condition_solitons(Emax,K,M,10**(-8),1,1)
 ###############################################################################
 #スキーム本体
 
@@ -1171,10 +1171,10 @@ def comparing_solitons_Ntbase(Emax,n,times):
 
     RD,ID,ND,VD = [],[],[],[]
 
-    fname = "Emax="+str(Emax)+"N="+str(n)+"Ntbase"+"GlasseyS.csv"
+    fname = "Emax="+str(Emax)+"N="+str(n)+"GlasseyS.csv"
 
     if not os.path.isfile(fname):
-        time,Rs,Is,Ns = Glassey(Param,K,M,1,2,2)
+        time,Rs,Is,Ns = Glassey(Param,K,M,1,2,1)
         pd.DataFrame(time+Rs+Is+Ns).to_csv(fname)
     with open(fname) as f:
         for row in csv.reader(f, quoting=csv.QUOTE_NONNUMERIC):
@@ -1242,10 +1242,10 @@ def comparing_solitons_Vupdate(Emax,n,times):
     RGD,IGD,NGD = [],[],[]
     RD,ID,ND,VD = [],[],[],[]
 
-    fname = "Emax="+str(Emax)+"N="+str(n)+"Vupdate"+"GlasseyS.csv"
+    fname = "Emax="+str(Emax)+"N="+str(n)+"GlasseyS.csv"
 
     if not os.path.isfile(fname):
-        time,Rs,Is,Ns = Glassey(Param,K,M,1,2,3)
+        time,Rs,Is,Ns = Glassey(Param,K,M,1,2,1)
         pd.DataFrame(time+Rs+Is+Ns).to_csv(fname)
     with open(fname) as f:
         for row in csv.reader(f, quoting=csv.QUOTE_NONNUMERIC):
@@ -1320,14 +1320,15 @@ def comparing_solitons_Vupdate(Emax,n,times):
         ax[0].legend(); ax[1].legend(); ax[2].legend(); ax[3].legend(); ax[4].legend()
     plt.show()
 
-def comparing_solitons_Glassey(Emax,n,times):
+def comparing_solitons_GlasseyType(Emax,n,times):
     Param = parameters(20,1,Emax,10**(-8))
     T = Param[-2]
     K = math.floor(20*n); M = math.floor(T*n)
     dx = 20/K; dt = T/M
 
     RG,IG,NG = [],[],[]
-    RGD,IGD,NGD = [],[],[]
+    RGD1,IGD1,NGD1 = [],[],[]
+    RGD2,IGD2,NGD2 = [],[],[]
 
     fname = "Emax="+str(Emax)+"N="+str(n)+"GlasseyS.csv"
 
@@ -1350,11 +1351,24 @@ def comparing_solitons_Glassey(Emax,n,times):
     with open(fname) as f:
         for row in csv.reader(f, quoting=csv.QUOTE_NONNUMERIC):
             if row[0] in [i*M//times+1 for i in range(times+1)]:
-                RGD.append(np.array(row[1:]))
+                RGD1.append(np.array(row[1:]))
             if row[0] in [M+2+i*M//times for i in range(times+1)]:
-                IGD.append(np.array(row[1:]))
+                IGD1.append(np.array(row[1:]))
             if row[0] in [2*M+3+i*M//times for i in range(times+1)]:
-                NGD.append(np.array(row[1:]))
+                NGD1.append(np.array(row[1:]))
+
+    fname = "Emax="+str(Emax)+"N="+str(n)+"Vupdate"+"GlasseySD.csv"
+    if not os.path.isfile(fname):
+        time,Rs,Is,Ns = Glassey(Param,K,M,3,2,3)
+        pd.DataFrame(time+Rs+Is+Ns).to_csv(fname)
+    with open(fname) as f:
+        for row in csv.reader(f, quoting=csv.QUOTE_NONNUMERIC):
+            if row[0] in [i*M//times+1 for i in range(times+1)]:
+                RGD2.append(np.array(row[1:]))
+            if row[0] in [M+2+i*M//times for i in range(times+1)]:
+                IGD2.append(np.array(row[1:]))
+            if row[0] in [2*M+3+i*M//times for i in range(times+1)]:
+                NGD2.append(np.array(row[1:]))
 
     x = np.linspace(0, 160, 8*K)
 
@@ -1366,30 +1380,94 @@ def comparing_solitons_Glassey(Emax,n,times):
         axs.append(fig.add_subplot(times+1, 4, 4*i+3))
         axs.append(fig.add_subplot(times+1, 4, 4*i+4))
 
-    l1 = "G"; l2 = "G+D"
+    l1 = "G"; l2 = "GD"; l3 = "GDV"
 
     for i in range(times+1):
         ax = axs[4*i:4*i+4]
 
         EG = [(RG[i][k]**2+IG[i][k]**2)**0.5 for k in range(len(RG[i]))]
-        EGD = [(RGD[i][k]**2+IGD[i][k]**2)**0.5 for k in range(len(RG[i]))]
+        EGD1 = [(RGD1[i][k]**2+IGD1[i][k]**2)**0.5 for k in range(len(RG[i]))]
+        EGD2 = [(RGD2[i][k]**2+IGD2[i][k]**2)**0.5 for k in range(len(RG[i]))]
 
         ax[0].plot(x, RG[i], label=l1)
-        ax[0].plot(x, RGD[i], label=l2)
+        ax[0].plot(x, RGD1[i], label=l2)
+        ax[0].plot(x, RGD2[i], label=l3)
         ax[0].set_ylabel("ReE")
         ax[1].plot(x, IG[i], label=l1)
-        ax[1].plot(x, IGD[i], label=l2)
+        ax[1].plot(x, IGD1[i], label=l2)
+        ax[1].plot(x, IGD2[i], label=l3)
         ax[1].set_ylabel("ImE")
         ax[2].plot(x, EG, label=l1)
-        ax[2].plot(x, EGD, label=l2)
+        ax[2].plot(x, EGD1, label=l2)
+        ax[2].plot(x, EGD2, label=l3)
         ax[2].set_ylabel("|E|")
         ax[3].plot(x, NG[i], label=l1)
-        ax[3].plot(x, NGD[i], label=l2)
+        ax[3].plot(x, NGD1[i], label=l2)
+        ax[3].plot(x, NGD2[i], label=l3)
         ax[3].set_ylabel("N")
         ax[0].legend(); ax[1].legend(); ax[2].legend(); ax[3].legend()
     plt.show()
 
-def comparing_solitons_DVDM(Emax,n,times):
+def comparing_solitons_GlasseyTime(Emax,m,times,Ntype,Vtype):
+    Param = parameters(20,1,Emax,10**(-8))
+    T = Param[-2]
+
+    ns = [2**j*10 for j in range(m)]
+    RGs,IGs,NGs = [],[],[]
+    Ks = [math.floor(20*ns[j]) for j in range(m)]
+    Ms = [math.floor(T*ns[j]) for j in range(m)]
+    xs = [np.linspace(0, 160, 8*Ks[j]) for j in range(m)]
+
+    for j in range(m):
+        n = ns[j]; K = Ks[j]; M = Ms[j]
+        dx = 20/K; dt = T/M
+        text = "GlasseyS"
+        if Ntype == 3:
+            text += "D"
+        if Vtype == 3:
+            text = "Vupdate"+text
+        fname = "Emax="+str(Emax)+"N="+str(n)+text+".csv"
+        print(fname)
+        RG,IG,NG = [],[],[]
+
+        if not os.path.isfile(fname):
+            time,Rs,Is,Ns = Glassey(Param,K,M,Ntype,2,Vtype)
+            pd.DataFrame(time+Rs+Is+Ns).to_csv(fname)
+        with open(fname) as f:
+            for row in csv.reader(f, quoting=csv.QUOTE_NONNUMERIC):
+                if row[0] in [i*M//times+1 for i in range(times+1)]:
+                    RG.append(np.array(row[1:]))
+                if row[0] in [M+2+i*M//times for i in range(times+1)]:
+                    IG.append(np.array(row[1:]))
+                if row[0] in [2*M+3+i*M//times for i in range(times+1)]:
+                    NG.append(np.array(row[1:]))
+        RGs.append(RG); IGs.append(IG); NGs.append(NG)
+
+    fig = plt.figure()
+    axs = []
+    for i in range(times+1):
+        axs.append(fig.add_subplot(times+1, 4, 4*i+1))
+        axs.append(fig.add_subplot(times+1, 4, 4*i+2))
+        axs.append(fig.add_subplot(times+1, 4, 4*i+3))
+        axs.append(fig.add_subplot(times+1, 4, 4*i+4))
+
+    for i in range(times+1):
+        ax = axs[4*i:4*i+4]
+
+
+        EGs = [[(RGs[j][k]**2+IGs[j][k]**2)**0.5 for k in range(len(RGs[0]))] for j in range(m)]
+
+        for j in range(m):
+            l = "Δt="+str(1/ns[j])
+            ax[0].plot(xs[j], RGs[j][i], label = l)
+            ax[1].plot(xs[j], IGs[j][i], label = l)
+            ax[2].plot(xs[j], EGs[j][i], label = l)
+            ax[3].plot(xs[j], NGs[j][i], label = l)
+        ax[0].set_ylabel("ReE"); ax[1].set_ylabel("ImE"); ax[2].set_ylabel("|E|"); ax[3].set_ylabel("N")
+        ax[0].legend(); ax[1].legend(); ax[2].legend(); ax[3].legend()
+    plt.show()
+
+def comparing_solitons_DVDMType(Emax,n,times):
     Param = parameters(20,1,Emax,10**(-8))
     T = Param[-2]
     K = math.floor(20*n); M = math.floor(T*n)
@@ -1482,8 +1560,72 @@ def comparing_solitons_DVDM(Emax,n,times):
         ax[0].legend(); ax[1].legend(); ax[2].legend(); ax[3].legend(); ax[4].legend()
     plt.show()
 
-#comparing_solitons(1,20,1)
-#comparing_solitons_Ntbase(3,20,3)
-#comparing_solitons_Vupdate(3,20,3)
-#comparing_solitons(1.3,20,1)
-#comparing_solitons_DVDM(1,20,1)
+def comparing_solitons_DVDMTime(Emax,m,times,Vtype):
+    Param = parameters(20,1,Emax,10**(-8))
+    T = Param[-2]
+
+    ns = [2**j*10 for j in range(m)]
+    RDs,IDs,NDs,VDs = [],[],[],[]
+    Ks = [math.floor(20*ns[j]) for j in range(m)]
+    Ms = [math.floor(T*ns[j]) for j in range(m)]
+    xs = [np.linspace(0, 160, 8*Ks[j]) for j in range(m)]
+
+    for j in range(m):
+        n = ns[j]; K = Ks[j]; M = Ms[j]
+        dx = 20/K; dt = T/M
+        text = "DVDMS"
+        if Vtype == 2:
+            text = "Ntbase"+text
+        if Vtype == 3:
+            text = "Vupdate"+text
+        fname = "Emax="+str(Emax)+"N="+str(n)+text+".csv"
+        RD,ID,ND,VD = [],[],[],[]
+
+        if not os.path.isfile(fname):
+            time,Rs,Is,Ns,Vs = DVDM_Glassey(Param,K,M,10**(-8),2,Vtype)
+            pd.DataFrame(time+Rs+Is+Ns+Vs).to_csv(fname)
+        with open(fname) as f:
+            for row in csv.reader(f, quoting=csv.QUOTE_NONNUMERIC):
+                if row[0] in [i*M//times+1 for i in range(times+1)]:
+                    RD.append(np.array(row[1:]))
+                if row[0] in [M+2+i*M//times for i in range(times+1)]:
+                    ID.append(np.array(row[1:]))
+                if row[0] in [2*M+3+i*M//times for i in range(times+1)]:
+                    ND.append(np.array(row[1:]))
+                if row[0] in [3*M+4+i*M//times for i in range(times+1)]:
+                    VD.append(np.array(row[1:]))
+        RDs.append(RD); IDs.append(ID); NDs.append(ND); VDs.append(VD)
+
+    fig = plt.figure()
+    axs = []
+    for i in range(times+1):
+        axs.append(fig.add_subplot(times+1, 5, 5*i+1))
+        axs.append(fig.add_subplot(times+1, 5, 5*i+2))
+        axs.append(fig.add_subplot(times+1, 5, 5*i+3))
+        axs.append(fig.add_subplot(times+1, 5, 5*i+4))
+        axs.append(fig.add_subplot(times+1, 5, 5*i+5))
+
+    for i in range(times+1):
+        ax = axs[5*i:5*i+5]
+
+        EDs = [[(RDs[j][k]**2+IDs[j][k]**2)**0.5 for k in range(len(RDs[0]))] for j in range(m)]
+
+        for j in range(m):
+            l = "Δt="+str(1/ns[j])
+            ax[0].plot(xs[j], RDs[j][i], label = l)
+            ax[1].plot(xs[j], IDs[j][i], label = l)
+            ax[2].plot(xs[j], EDs[j][i], label = l)
+            ax[3].plot(xs[j], NDs[j][i], label = l)
+            ax[4].plot(xs[j], VDs[j][i], label = l)
+        ax[0].set_ylabel("ReE"); ax[1].set_ylabel("ImE"); ax[2].set_ylabel("|E|")
+        ax[3].set_ylabel("N"); ax[4].set_ylabel("V")
+        ax[0].legend(); ax[1].legend(); ax[2].legend(); ax[3].legend(); ax[4].legend()
+    plt.show()
+
+#comparing_solitons(0.5,20,1)
+#comparing_solitons_Ntbase(1,10,1)
+#comparing_solitons_Vupdate(0.18,20,1)
+#comparing_solitons_GlasseyType(0.5,20,1)
+#comparing_solitons_GlasseyTime(0.5,2,1,1,1)
+#comparing_solitons_DVDMType(0.5,20,1)
+comparing_solitons_DVDMTime(0.18,2,1,3)
