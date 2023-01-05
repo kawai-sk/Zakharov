@@ -1,13 +1,13 @@
 import math
 import cmath
 import scipy as sp
-from scipy.sparse import identity, csc_matrix, csc_array, bmat, diags
+from scipy.sparse import identity, csc_matrix, csc_array, bmat, diags, csr_matrix, csr_array
 from scipy.sparse.linalg import splu, spsolve
 import matplotlib.pyplot as plt
 import matplotlib.cm as cm
 import numpy as np
 import random
-import time
+from time import time
 import os
 import pandas as pd
 import csv
@@ -66,18 +66,16 @@ def analytical_solutions(Param,t,K):
     dn = [float(ellipfun('dn',W[k],q)) for k in range(K)]
     F = [Emax*dn[k] for k in range(K)]
 
-    R = [F[k]*math.cos(phi*(k*dx-u*t)) for k in range(K)]
-    I = [F[k]*math.sin(phi*(k*dx-u*t)) for k in range(K)]
-    N = [-F[k]**2/vv2 + N_0 for k in range(K)]
-    Nt = [coef1*dn[k]*float(ellipfun('sn',W[k],q)*ellipfun('cn',W[k],q)) for k in range(K)]
+    R = np.array([F[k]*math.cos(phi*(k*dx-u*t)) for k in range(K)])
+    I = np.array([F[k]*math.sin(phi*(k*dx-u*t)) for k in range(K)])
+    N = np.array([-F[k]**2/vv2 + N_0 for k in range(K)])
+    Nt = np.array([coef1*dn[k]*float(ellipfun('sn',W[k],q)*ellipfun('cn',W[k],q)) for k in range(K)])
 
-    snV = [float(asin(ellipfun('sn',W[k],q))) if -Kq < W[k] <= Kq
-     else math.pi - float(asin(ellipfun('sn',2*Kq - W[k],q))) if W[k] > Kq
-      else float(asin(ellipfun('sn',W[k] + 2*Kq,q))) - math.pi for k in range(K)]
+    snV = [math.floor(W[k]/(2*Kq)+1/2)*math.pi + float(asin(ellipfun('sn',W[k] - 2*Kq*math.floor(W[k]/(2*Kq)+1/2),q))) for k in range(K)]
 
-    V = [coef2*float(ellipe(snV[k],q)) - N_0*(k*dx-v*t)/v for k in range(K)]
+    V = np.array([coef2*float(ellipe(snV[k],q)) - N_0*(k*dx-v*t)/v for k in range(K)])
 
-    dV = [coef3*dn[k]**2 - N_0/v for k in range(K)]
+    dV = np.array([coef3*dn[k]**2 - N_0/v for k in range(K)])
 
     return R,I,N,Nt,V,dV
 
@@ -87,13 +85,13 @@ def analytical_solutions(Param,t,K):
 #差分
 def FD(v,dx):
     K = len(v)
-    return [(v[(k+1)%K] - v[k])/dx for k in range(K)]
+    return np.array([(v[(k+1)%K] - v[k])/dx for k in range(K)])
 def CD(v,dx):
     K = len(v)
-    return [(v[(k+1)%K] - v[(k-1)%K])/(2*dx) for k in range(K)]
+    return np.array([(v[(k+1)%K] - v[(k-1)%K])/(2*dx) for k in range(K)])
 def SCD(v,dx):
     K = len(v)
-    return [(v[(k+1)%K] -2*v[k] + v[(k-1)%K])/dx**2 for k in range(K)]
+    return np.array([(v[(k+1)%K] -2*v[k] + v[(k-1)%K])/dx**2 for k in range(K)])
 
 #L2ノルム
 def norm(v,dx):
@@ -115,6 +113,28 @@ def energy_Glassey(R,I,N1,N2,DDI,dt,dx):
     dN = np.array([(N2[k] - N1[k])/dt for k in range(1,K)])
     V = dx**2 * DDI.solve(dN)
     V = [0]+[V[i] for i in range(K-1)]
+    dR = FD(R,dx); dI = FD(I,dx);dV = FD(V,dx)
+    Energy = norm(dR,dx) + norm(dI,dx) + 0.25*norm(N1,dx) + 0.25*norm(N2,dx) + 0.5*norm(dV,dx)
+    for i in range(K):
+        Energy += 0.5*(N1[i]+N2[i])*(R[i]**2 + I[i]**2)*dx
+    return Energy
+
+def energy_Glassey2(R,I,N1,N2,DxI,dt,dx):
+    K = len(R)
+    dN = (N2 - N1)/dt
+    V = np.dot(DxI,dN)
+    V = np.array([V[k]-V[0] for k in range(len(V))])
+    dR = FD(R,dx); dI = FD(I,dx);dV = FD(V,dx)
+    Energy = norm(dR,dx) + norm(dI,dx) + 0.25*norm(N1,dx) + 0.25*norm(N2,dx) + 0.5*norm(dV,dx)
+    for i in range(K):
+        Energy += 0.5*(N1[i]+N2[i])*(R[i]**2 + I[i]**2)*dx
+    return Energy
+
+def energy_Glassey3(R,I,N1,N2,Dx,Dx2I,dt,dx):
+    K = len(R)
+    dN = (N2 - N1)/dt
+    V = np.dot(Dx2I,np.dot(Dx.T,dN))
+    V = np.array([V[k]-V[0] for k in range(len(V))])
     dR = FD(R,dx); dI = FD(I,dx);dV = FD(V,dx)
     Energy = norm(dR,dx) + norm(dI,dx) + 0.25*norm(N1,dx) + 0.25*norm(N2,dx) + 0.5*norm(dV,dx)
     for i in range(K):
@@ -165,7 +185,7 @@ def initial_condition(Param,K,M):
     d2N0 = SCD(N0,dx)
     dR0 = CD(R0,dx); d2R0 = SCD(R0,dx)
     dI0 = CD(I0,dx); d2I0 = SCD(I0,dx)
-    N1 = [N0[k] + dt*Nt0[k] + dt**2*(0.5*d2N0[k] + dR0[k]**2 + dI0[k]**2 + R0[k]*d2R0[k] + I0[k]*d2I0[k]) for k in range(K)]
+    N1 = N0 + dt*Nt0 + dt**2*(0.5*d2N0 + dR0**2 + dI0**2 + R0*d2R0 + I0*d2I0)
 
     #初期波形の描画
     WantToPlot = False
@@ -189,25 +209,25 @@ def initial_condition(Param,K,M):
         #(G)でのエネルギーを確認するための R1,I1,V0 の準備
         Ik = csc_matrix(identity(K))
         Dx = (1/dx**2)*csc_matrix(-2*Ik + np.eye(K,k=1) + np.eye(K,k=K-1) + np.eye(K,k=-1) + np.eye(K,k=-K+1))
-        Dn = diags([N0[k]+N1[k] for k in range(K)])
+        Dn = diags(N0+N1)
         D = dt*(0.5*Dx - 0.25*Dn)
         A = bmat([[Ik,D],[-D,Ik]])
-        b = spsolve(A,np.array([2*R0[i] if i < K else 2*I0[i-K] for i in range(2*K)]))
-        R1 = -np.array(R0) + b[:K]
-        I1 = -np.array(I0) + b[K:]
+        b = np.array(spsolve(A,2*np.hstack([R0,I0])))
+        R1 = -R0 + b[:K]
+        I1 = -I0 + b[K:]
 
         DD = csc_matrix(-2*np.eye(K-1,k=0) + np.eye(K-1,k=1) + np.eye(K-1,k=-1))
-        DDI = linalg.splu(DD)
-        dN = np.array([(N1[k] - N0[k])/dt for k in range(1,K)])
-        VG = dx**2 * DDI.solve(dN)
-        VG = [0]+[VG[i] for i in range(K-1)] #(G)でのV0
-        V0 = [V0[i]-V0[0] for i in range(K)] #(D)での,真のV0
+        DDI = splu(DD)
+        dN = (N1 - N0)/dt
+        VG = dx**2 * np.array(DDI.solve(dN[1:]))
+        VG = np.hstack([[0],VG]) #(G)でのV0
+        V0 = np.array([V0[i]-V0[0] for i in range(K)]) #(D)での,真のV0
 
         #(G),(D)のV0の描画
         x = np.linspace(0,L,K)
         #plt.plot(x,Nt0,label="Nt,t=0")
-        plt.plot(x,np.array(V0),label="V_0,t=0")
-        plt.plot(x,np.array(VG),label="V_G,t=0")
+        plt.plot(x,V0,label="V_0,t=0")
+        plt.plot(x,VG,label="V_G,t=0")
         plt.legend()
         plt.show()
 
@@ -264,32 +284,24 @@ def initial_condition_solitons(Emax,K,M,eps,NVtype):
     dn = [float(ellipfun('dn',W[k],q)) for k in range(K)]
     F = [Emax*dn[k] for k in range(K)]
 
-    Rbase1 = [F[k]*math.cos(phi*(k*dx-10)) for k in range(K)]
-    Ibase1 = [F[k]*math.sin(phi*(k*dx-10)) for k in range(K)]
-    Rbase2 = [Rbase1[k] for k in range(K)]
-    Ibase2 = [-Ibase1[k] for k in range(K)]
+    Rb = np.array([F[k]*math.cos(phi*(k*dx-10)) for k in range(K)])
+    Ib = np.array([F[k]*math.sin(phi*(k*dx-10)) for k in range(K)])
+    Nb = np.array([-F[k]**2/vv2 + N_0 for k in range(K)])
 
-    Nbase = [-F[k]**2/vv2 + N_0 for k in range(K)]
-
-    R0 = [Rbase1[0] for k in range(3*K)]+Rbase1+Rbase2+[Rbase1[0] for k in range(3*K)]
-    I0 = [Ibase1[0] for k in range(3*K)]+Ibase1+Ibase2+[Ibase1[0] for k in range(3*K)]
-    N0 = [Nbase[0] for k in range(3*K)]+Nbase+Nbase+[Nbase[0] for k in range(3*K)]
+    R0 = np.hstack([[Rb[0] for k in range(3*K)],Rb,Rb,[Rb[0] for k in range(3*K)]])
+    I0 = np.hstack([[Ib[0] for k in range(3*K)],Ib,-Ib,[Ib[0] for k in range(3*K)]])
+    N0 = np.hstack([[Nb[0] for k in range(3*K)],Nb,Nb,[Nb[0] for k in range(3*K)]])
 
     #Taylorにより N1 を計算: (N_t)_1
-    Ntbase1 = [float(coef*dn[k]*ellipfun('sn',W[k],q)*ellipfun('cn',W[k],q)) for k in range(K)]
-    Ntbase2 = [-Ntbase1[k] for k in range(K)]
-    Ntbase = [Ntbase1[0] for k in range(3*K)]+Ntbase1+Ntbase2+[Ntbase1[0] for k in range(3*K)]
+    Ntb = np.array([float(coef*dn[k]*ellipfun('sn',W[k],q)*ellipfun('cn',W[k],q)) for k in range(K)])
+    Nt0 = np.hstack([[Ntb[0] for k in range(3*K)],Ntb,-Ntb,[Ntb[0] for k in range(3*K)]])
 
-    d2N = SCD(Nbase,dx)
-    dR1 = CD(Rbase1,dx); d2R1 = SCD(Rbase1,dx)
-    dI1 = CD(Ibase1,dx); d2I1 = SCD(Ibase1,dx)
-    N1b1 = [Nbase[k] + dt*Ntbase1[k] + dt**2*(0.5*d2N[k] + dR1[k]**2 + dI1[k]**2 + Rbase1[k]*d2R1[k] + Ibase1[k]*d2I1[k]) for k in range(K)]
+    d2N = SCD(Nb,dx)
+    dR = CD(Rb,dx); d2R = SCD(Rb,dx)
+    dI = CD(Ib,dx); d2I = SCD(Ib,dx)
+    N1b = Nb + dt**2*(0.5*d2N + dR**2 + dI**2 + Rb*d2R + Ib*d2I)
 
-    dR2 = CD(Rbase2,dx); d2R2 = SCD(Rbase2,dx)
-    dI2 = CD(Ibase2,dx); d2I2 = SCD(Ibase2,dx)
-    N1b2 = [Nbase[k] + dt*Ntbase2[k] + dt**2*(0.5*d2N[k] + dR2[k]**2 + dI2[k]**2 + Rbase2[k]*d2R2[k] + Ibase2[k]*d2I2[k]) for k in range(K)]
-
-    N1 = [N1b1[0] for k in range(3*K)]+N1b1+N1b2+[N1b1[0] for k in range(3*K)]
+    N1 = np.hstack([[N1b[0] for k in range(3*K)],N1b+dt*Ntb,N1b-dt*Ntb,[N1b[0] for k in range(3*K)]])
     #print(dist(Ntbase,SCD(V0,dx),dx))
 
     # 解析的に V を計算する場合(V_1 or V_2)
@@ -301,31 +313,28 @@ def initial_condition_solitons(Emax,K,M,eps,NVtype):
 
         # V_1:1ソリトン解の重ね合わせ
         if NVtype%3 == 1:
-            Vbase1 = [coef2*float(ellipe(snV[k],q)) - N_0*k*dx/v for k in range(K)]
-            Vbase1 = [Vbase1[k] - Vbase1[0] for k in range(K)]
-            Vbase2 = [-Vbase1[k] for k in range(K)]
-
-            V0 = [Vbase1[0] for k in range(3*K)]+Vbase1+Vbase2+[Vbase1[0] for k in range(3*K)]
+            Vb = [coef2*float(ellipe(snV[k],q)) - N_0*k*dx/v for k in range(K)]
+            Vb = np.array([Vb[k]-Vb[0] for k in range(K)])
+            V0 = np.hstack([[Vb[0] for k in range(3*K)],Vb,-Vb,[Vb[0] for k in range(3*K)]])
 
         # V_2:(N_t)_1に対応する
         if NVtype%3 == 2:
-            Vbase1 = [coef2*float(ellipe(snV[k],q)) + N_0*L/(2*v) for k in range(K)]
-            Vbase2 = [-coef2*float(ellipe(snV[k],q)) + N_0*L/(2*v)  for k in range(K)]
-
-            V0 = [Vbase1[0] for k in range(3*K)]+Vbase1+Vbase2+[Vbase1[0] for k in range(3*K)]
+            Vb1 = [coef2*float(ellipe(snV[k],q)) + N_0*L/(2*v) for k in range(K)]
+            Vb2 = [-coef2*float(ellipe(snV[k],q)) + N_0*L/(2*v)  for k in range(K)]
+            V0 = np.hstack([[Vb1[0] for k in range(3*K)],Vb1,Vb2,[Vb1[0] for k in range(3*K)]])
 
     # 数値的に V を計算する場合(V_3)
     if NVtype%3 == 0:
         DD = csc_matrix(-2*np.eye(8*K-1,k=0) + np.eye(8*K-1,k=1) + np.eye(8*K-1,k=-1))
         DDI = splu(DD)
-        dN = [(N1[k] - N0[k])/dt for k in range(1,8*K)]
-        V0 = dx**2 * DDI.solve(dN)
-        V0 = [0]+[V0[i] for i in range(8*K-1)]
+        dN = (N1 - N0)/dt
+        V0 = dx**2 * DDI.solve(dN[1:])
+        V0 = np.hstack([[0],V0])
 
     #Vに基づいて N1 を定める場合
     if NVtype//3 == 1:
         d2V0 = SCD(V0,dx)
-        N1 = [N0[k] + dt*d2V0[k] for k in range(len(N0))]
+        N1 = N0 + dt*d2V0
 
     #N,Vを描画
     WantToPlot = False
@@ -341,20 +350,20 @@ def initial_condition_solitons(Emax,K,M,eps,NVtype):
         # エネルギー初期値の計算用
         Ik = csc_matrix(identity(K0))
         Dx = (1/dx**2)*(-2*Ik + np.eye(K0,k=1) + np.eye(K0,k=K0-1) + np.eye(K0,k=-1) + np.eye(K0,k=-K0+1))
-        Dn = diags([N0[k]+N1[k] for k in range(K0)])
+        Dn = diags(N0+N1)
         D = dt*(0.5*Dx - 0.25*Dn)
         A = bmat([[Ik,D],[-D,Ik]])
-        b = spsolve(A,np.array([2*R0[i] if i < K0 else 2*I0[i-K0] for i in range(2*K0)]))
-        R1 = - np.array(R0) + b[:K0]
-        I1 = - np.array(I0) + b[K0:]
+        b = np.array(spsolve(A,2*np.ahstack([R0,I0])))
+        R1 = - R0 + b[:K0]
+        I1 = - I0 + b[K0:]
 
         K = len(R1)
         DD = csc_matrix(-2*np.eye(K-1,k=0) + np.eye(K-1,k=1) + np.eye(K-1,k=-1))
         DDI = splu(DD)
-        dN = np.array([(N1[k] - N0[k])/dt for k in range(K)])
-        VG = dx**2 * DDI.solve(dN[1:])
-        VG = [0]+[VG[i] for i in range(K-1)]
-        V0 = [V0[i]-V0[0] for i in range(K)]
+        dN = (N1 - N0)/dt
+        VG = dx**2 * np.array(DDI.solve(dN[1:]))
+        VG = np.hstack([[0],VG])
+        V0 -= np.array([V0[0] for i in range(K)])
 
         # N_t と V_xx の描画
         if False:
@@ -363,10 +372,10 @@ def initial_condition_solitons(Emax,K,M,eps,NVtype):
             fig1 = fig.add_subplot(2, 1, 1)
             fig2 = fig.add_subplot(2, 1, 2)
             fig1.plot(x,SCD(V0,dx),label="V0_xx,t=0")
-            fig1.plot(x,Ntbase,label="Nt,t=0")
+            fig1.plot(x,Ntb,label="Nt,t=0")
             #fig1.plot(x,SCD(VG,dx),label="VG_xx,t=0")
             fig1.legend()
-            fig2.plot(x,Ntbase,label="Nt,t=0")
+            fig2.plot(x,Ntb,label="Nt,t=0")
             fig2.plot(x,dN,label="dN,t=0")
             fig2.plot(x,V0,label="V_0,t=0")
             fig2.plot(x,VG,label="V_G,t=0")
@@ -409,8 +418,8 @@ def initial_condition_solitons(Emax,K,M,eps,NVtype):
 
 # Glassey スキーム
 def Glassey(Param,K,M,Stype = 1,NVtype = 1):
+    start = time()
     L = Param[0]; T = Param[-2]
-    start = time.perf_counter()
     dx = L/K; dt = T/M #print(dt,dx)
 
     # 数値解の記録
@@ -424,6 +433,11 @@ def Glassey(Param,K,M,Stype = 1,NVtype = 1):
         # NVtype == 6: (N_t)_1 から数値的に計算される V に対応する N1
         R_now,I_now,N_now,N_next = initial_condition_solitons(Param[1],K,M,10**(-8),NVtype)[:4]
         K *= 8
+
+    print("初期条件準備時間:",time()-start)
+    start = time()
+
+    R_now = np.array(R_now); I_now = np.array(I_now); N_now = np.array(N_now); N_next = np.array(N_next)
     Rs.append(R_now); Is.append(I_now); Ns.append(N_now); Ns.append(N_next)
 
     # ここまでに数値解を計算した時刻
@@ -438,25 +452,25 @@ def Glassey(Param,K,M,Stype = 1,NVtype = 1):
     while ri_t < M or n_t < M:
         #print(ri_t,n_t,M)
         if ri_t < n_t: # Nm,N(m+1),Em から E(m+1)を求める
-            Dn = diags([N_now[k]+N_next[k] for k in range(K)])
+            Dn = diags(N_now+N_next)
             D = dt*(0.5*Dx - 0.25*Dn)
-            A = bmat([[Ik,D],[-D,Ik]])
-            b = spsolve(A,np.array([2*R_now[i] if i < K else 2*I_now[i-K] for i in range(2*K)]))
-            R_next = -np.array(R_now) + np.array(b[:K])
-            I_next = -np.array(I_now) + np.array(b[K:])
+            A = bmat([[Ik,D],[-D,Ik]],'csc')
+            t0 = time()
+            b = np.array(spsolve(A,2*np.hstack([R_now,I_now])))
+            R_next = -R_now + b[:K]
+            I_next = -I_now + b[K:]
             Rs.append(R_next); Is.append(I_next)
             R_now = R_next; I_now = I_next
             ri_t += 1
         else: # N(m-1),Nm,Em から N(m+1)を求める
             N_before = N_now; N_now = N_next
-            E = np.array([R_now[k]**2 + I_now[k]**2 for k in range(K)])
-            NN = np.array(N_now) + E
-            N_next = np.array(ID.solve(2*NN)) - np.array(N_before) - 2*E
+            E = R_now**2 + I_now**2
+            N_next = 2*np.array(ID.solve(N_now + E)) - N_before - 2*E
             Ns.append(N_next)
             n_t += 1
             if ri_t%10 == 0:
                 print(n_t,M) #実行の進捗の目安として
-    end = time.perf_counter()
+    end = time()
     print("Glassey実行時間:",end-start)
 
     WantToKnow = True #ノルム・エネルギーを知りたいとき
@@ -466,24 +480,30 @@ def Glassey(Param,K,M,Stype = 1,NVtype = 1):
         dNorm = [abs(Norm[i] - Norm[0]) for i in range(1,len(Rs))]
         rNorm = [dNorm[i]/Norm[0] for i in range(len(Rs)-1)]
 
-        DD = csc_matrix(-2*np.eye(K-1,k=0) + np.eye(K-1,k=1) + np.eye(K-1,k=-1))
-        DDI = splu(DD)
-        Energy = [energy_Glassey(Rs[i+1],Is[i+1],Ns[i],Ns[i+1],DDI,dt,dx) for i in range(len(Rs)-1)]
-        dEnergy = [abs(Energy[i] - Energy[0]) for i in range(len(Rs)-1)]
-        rEnergy = [dEnergy[i]/abs(Energy[0]) for i in range(len(Rs)-1)]
-        print("保存量初期値:",Norm[0],Energy[0])
+        #DD = csc_matrix(-2*np.eye(K-1,k=0) + np.eye(K-1,k=1) + np.eye(K-1,k=-1))
+        #DDI = splu(DD)
+        #Energy = [energy_Glassey(Rs[i+1],Is[i+1],Ns[i],Ns[i+1],DDI,dt,dx) for i in range(len(Rs)-1)]
+        #dEnergy = [abs(Energy[i] - Energy[0]) for i in range(len(Rs)-1)]
+        #rEnergy = [dEnergy[i]/abs(Energy[0]) for i in range(len(Rs)-1)]
+
+        Dx = (-2*np.eye(K,k=0) + np.eye(K,k=1) + np.eye(K,k=-1) + np.eye(K,k=K-1)+ np.eye(K,k=1-K))/dx**2
+        DxI = np.linalg.pinv(Dx)
+        Energy2 = [energy_Glassey2(Rs[i+1],Is[i+1],Ns[i],Ns[i+1],DxI,dt,dx) for i in range(len(Rs)-1)]
+        dEnergy2 = [abs(Energy2[i] - Energy2[0]) for i in range(len(Rs)-1)]
+        rEnergy2 = [dEnergy2[i]/abs(Energy2[0]) for i in range(len(Rs)-1)]
+
+        print("保存量初期値:",Norm[0],Energy2[0])
 
         print("初期値に対するノルムの最大誤差:",max(dNorm))
         print("初期値に対するノルムの最大誤差比:",max(rNorm))
 
-        print("初期値に対するエネルギーの最大誤差:",max(dEnergy))
-        print("初期値に対するエネルギーの最大誤差比:",max(rEnergy))
+        print("初期値に対するエネルギーの最大誤差:",max(dEnergy2))#,max(dEnergy2))#,max(dEnergy3))
+        print("初期値に対するエネルギーの最大誤差比:",max(rEnergy2))#,max(rEnergy2))#,max(rEnergy3))
         if WantToPlot:
             Time = [i for i in range(1,len(Rs))]
-            plt.plot(Time,dNorm,label="Norm")
-            plt.plot(Time,dEnergy,label="Energy")
+            plt.plot(Time,dEnergy2,label="G,Energy",ls = "-",color="k")
             plt.xlabel("time")
-            plt.ylabel("errors of Norm and Energy")
+            plt.ylabel("errors of Energy")
             plt.legend()
             plt.show()
 
@@ -491,8 +511,11 @@ def Glassey(Param,K,M,Stype = 1,NVtype = 1):
 
 def checking_Glassey(L,Emax,n,short = False):
     Param = parameters(L,1,Emax,eps)
-    if short:
+    if short == True:
         Param[-2] = Param[-2]/L
+    else:
+        if short != False:
+            Param[-2] = Param[-2]*short
     T = Param[-2]
     K = math.floor(L*n); M = math.floor(T*n)
     dx = L/K; dt = T/M
@@ -500,9 +523,13 @@ def checking_Glassey(L,Emax,n,short = False):
     Rs,Is,Ns = [],[],[]
 
     fname = "L="+str(L)+"Emax="+str(Emax)+"N="+str(n)
-    if short:
+    if short == True:
         fname = fname + "short"
+    else:
+        if short != False:
+            fname = fname + str(short)
     fname = fname + "Glassey.csv"
+    print(fname)
 
     if not os.path.isfile(fname):
         time,RG,IG,NG = Glassey(Param,K,M)
@@ -518,8 +545,11 @@ def checking_Glassey(L,Emax,n,short = False):
 
     tRs,tIs,tNs,tVs = [],[],[],[]
     fname = "L="+str(L)+"Emax="+str(Emax)+"N="+str(n)
-    if short:
+    if short == True:
         fname = fname + "short"
+    else:
+        if short != False:
+            fname = fname + str(short)
     fname = fname + "Analytic.csv"
 
     if os.path.isfile(fname):
@@ -545,13 +575,32 @@ def checking_Glassey(L,Emax,n,short = False):
     RANGE = [i for i in range(len(Rs))]
     #RANGE = [len(Rs)-1] # 最終時刻での誤差だけ知りたいとき
     print("(dx**2 + dt**2)**0.5:",(dx**2 + dt**2)**0.5)
-    meE = 0; reE = 0; meN = 0; reN = 0
+    meE = 0; mrE = 0; meN = 0; mrN = 0
+    WantToPlot = False
+    if WantToPlot:
+        meEs = [0]
+        meNs = [0]
+        TIMES = [0]
     for i in RANGE:
         tnorm = (norm(tRs[i],dx) + norm(tIs[i],dx))**0.5
 
         eE = (dist(Rs[i],tRs[i],dx)**2+dist(Is[i],tIs[i],dx)**2)**0.5; eN = dist(Ns[i],tNs[i],dx)
         meE = max(meE,eE); meN = max(meN,eN)
         mrE = max(mrE,eE/tnorm); mrN = max(mrN,eN/(norm(tNs[i],dx)**0.5))
+        if WantToPlot:
+            meEs.append(meE); meNs.append(meN); TIMES.append((i+1)*dt)
+    if WantToPlot:
+        fig = plt.figure()
+        axR = fig.add_subplot(1, 2, 1)
+        axN = fig.add_subplot(1, 2, 2)
+        #axV = fig.add_subplot(1, 3, 3)
+        axR.plot(TIMES,meEs,label="G,E",ls = "-",color="k")
+        axN.plot(TIMES,meNs,label="G,N",ls = "-",color="k")
+        #axV.plot(x,V0,label="V,t=0")
+        axR.legend(); axN.legend()#; axV.legend()
+        axR.set_xlabel("t"); axN.set_xlabel("t")
+        axR.set_ylabel("max_error"); axN.set_xlabel("max_error")
+        plt.show()
     print("各要素の最大誤差:",meE,meN)
     print("各要素の最大誤差比:",mrE,mrN)
 
@@ -589,9 +638,9 @@ def Glassey_CondNum(Emax,n,Stype = 1,NVtype = 1):
 
 # DVDMスキーム本体
 # Newton法の初期値をGlasseyで求める
-def DVDM_Glassey(Param,K,M,eps = 10**(-8),Stype = 1,NVtype = 2):
+def DVDM_ENV(Param,K,M,eps = 10**(-8),Stype = 1,NVtype = 2):
     L = Param[0]; T = Param[-2]
-    start = time.perf_counter()
+    start = time()
     dx = L/K; dt = T/M #print(dt,dx)
 
     # 数値解の記録
@@ -604,6 +653,10 @@ def DVDM_Glassey(Param,K,M,eps = 10**(-8),Stype = 1,NVtype = 2):
         # NVtype == 3: (N_t)_1 から数値的に計算される V0
         R_now,I_now,N_now,N_next,V_now = initial_condition_solitons(Param[1],K,M,eps,NVtype)
         K *= 8
+
+    print("初期条件準備時間:",time()-start)
+    start = time()
+
     R_now = np.array(R_now); I_now = np.array(I_now); N_now = np.array(N_now); N_next = np.array(N_next); V_now = np.array(V_now)
     Rs.append(R_now); Is.append(I_now); Ns.append(N_now); Vs.append(V_now)
 
@@ -612,7 +665,6 @@ def DVDM_Glassey(Param,K,M,eps = 10**(-8),Stype = 1,NVtype = 2):
     DxM = (-2*np.identity(K) + np.eye(K,k=1) + np.eye(K,k=K-1) + np.eye(K,k=-1) + np.eye(K,k=-K+1))/dx**2
     Dx = csc_matrix(DxM)
     ID = splu(Ik-0.5*dt**2*Dx)
-
     DR_now = np.dot(DxM,R_now); DI_now = np.dot(DxM,I_now); DV_now = np.dot(DxM,V_now)
 
     tmax = 0; tsum = 0
@@ -621,27 +673,27 @@ def DVDM_Glassey(Param,K,M,eps = 10**(-8),Stype = 1,NVtype = 2):
         t = 0
         dN = 0.5*dt*Dx - 0.25*dt*diags(N_now)
         dR_now = 0.25*dt*diags(R_now); dI_now = 0.25*dt*diags(I_now)
-
-        F0 = np.array([ - R_now[i%K] + 0.5*dt*DI_now[i%K] if i//K == 0
-        else -I_now[i%K] - 0.5*dt*DR_now[i%K] if i//K == 1
-        else -N_now[i%K] - 0.5*dt*DV_now[i%K] if i//K == 2
-        else - V_now[i%K] - 0.5*dt*(N_now[i%K] + R_now[i%K]**2 + I_now[i%K]**2) for i in range(4*K)])
+        F0 = np.hstack([-R_now + 0.5*dt*DI_now,
+            -I_now -0.5*dt*DR_now,
+            -N_now - 0.5*dt*DV_now,
+            - V_now - 0.5*dt*(N_now + R_now**2 + I_now**2)])
 
         if m > 0:
-            E = np.array([R_now[k]**2 + I_now[k]**2 for k in range(K)])
+            E = R_now**2 + I_now**2
             N_next = 2*np.array(ID.solve(N_now + E)) - N_before - 2*E
+
         D = dt*(0.5*Dx - 0.25*diags(N_now+N_next))
         A = bmat([[Ik,D],[-D,Ik]])
-        b = np.array(spsolve(A,np.array([2*R_now[i] if i < K else 2*I_now[i-K] for i in range(2*K)])))
+        b = 2*np.array(spsolve(A,np.hstack([R_now,I_now])))
         R_next = -R_now + b[:K]; I_next = - I_now + b[K:]
 
-        V_next = [V_now[k]+ 0.5*dt*(N_next[k] + N_now[k] + R_now[k]**2 + R_next[k]**2 + I_now[k]**2 + I_next[k]**2) for k in range(K)]
+        V_next = V_now + 0.5*dt*(N_next + N_now + R_now**2 + R_next**2 + I_now**2 + I_next**2)
         DR_next = np.dot(DxM,R_next); DI_next = np.dot(DxM,I_next); DV_next = np.dot(DxM,V_next)
 
-        F = F0 + np.array([R_next[i%K] + 0.5*dt*DI_next[i%K] - 0.25*dt*(I_next[i%K] + I_now[i%K])*(N_next[i%K] + N_now[i%K]) if i//K == 0
-            else I_next[i%K] - 0.5*dt*DR_next[i%K] + 0.25*dt*(R_next[i%K] + R_now[i%K])*(N_next[i%K] + N_now[i%K]) if i//K == 1
-            else N_next[i%K] - 0.5*dt*DV_next[i%K] if i//K == 2
-            else V_next[i%K] - 0.5*dt*(N_next[i%K] + R_next[i%K]**2 + I_next[i%K]**2) for i in range(4*K)])
+        F = F0 + np.hstack([R_next + 0.5*dt*DI_next - 0.25*dt*(I_next + I_now)*(N_next + N_now),
+            I_next - 0.5*dt*DR_next + 0.25*dt*(R_next + R_now)*(N_next + N_now),
+            N_next - 0.5*dt*DV_next,
+            V_next - 0.5*dt*(N_next + R_next**2 + I_next**2)])
         #print(m,"Start:",norm(F,dx)**0.5)
 
         while norm(F,dx)**0.5 >= eps:
@@ -654,10 +706,10 @@ def DVDM_Glassey(Param,K,M,eps = 10**(-8),Stype = 1,NVtype = 2):
             R_next -= r[:K]; I_next -= r[K:2*K]; N_next -= r[2*K:3*K]; V_next -= r[3*K:]
             DR_next = np.dot(DxM,R_next); DI_next = np.dot(DxM,I_next); DV_next = np.dot(DxM,V_next)
 
-            F = F0 + np.array([R_next[i%K] + 0.5*dt*DI_next[i%K] - 0.25*dt*(I_next[i%K] + I_now[i%K])*(N_next[i%K] + N_now[i%K]) if i//K == 0
-                else I_next[i%K] - 0.5*dt*DR_next[i%K] + 0.25*dt*(R_next[i%K] + R_now[i%K])*(N_next[i%K] + N_now[i%K]) if i//K == 1
-                else N_next[i%K] - 0.5*dt*DV_next[i%K] if i//K == 2
-                else V_next[i%K] - 0.5*dt*(N_next[i%K] + R_next[i%K]**2 + I_next[i%K]**2) for i in range(4*K)])
+            F = F0 + np.hstack([R_next + 0.5*dt*DI_next - 0.25*dt*(I_next + I_now)*(N_next + N_now),
+                I_next - 0.5*dt*DR_next + 0.25*dt*(R_next + R_now)*(N_next + N_now),
+                N_next - 0.5*dt*DV_next,
+                V_next - 0.5*dt*(N_next + R_next**2 + I_next**2)])
 
             t += 1
             if t > 1000:
@@ -672,10 +724,10 @@ def DVDM_Glassey(Param,K,M,eps = 10**(-8),Stype = 1,NVtype = 2):
             print("時刻:",m,"終点:",M)
     print("最大反復数:",tmax,"平均反復数:",tsum/M)
 
-    end = time.perf_counter()
-    print("DVDM実行時間:",end-start)
+    end = time()
+    print("DVDM(ENV)実行時間:",end-start)
 
-    WantToKnow = True #ノルム・エネルギーを知りたいとき
+    WantToKnow = False #ノルム・エネルギーを知りたいとき
     WantToPlot = False #ノルム・エネルギーを描画したいとき
     if WantToKnow:
         Norm = [norm(Rs[i],dx) + norm(Is[i],dx) for i in range(len(Rs))]
@@ -704,7 +756,7 @@ def DVDM_Glassey(Param,K,M,eps = 10**(-8),Stype = 1,NVtype = 2):
             plt.show()
     return [[str(end-start)]+[0 for i in range(len(Rs[0])-1)]],Rs,Is,Ns,Vs
 
-def checking_DVDM(L,Emax,n,short = False,eps = 10**(-8)):
+def checking_DVDM_ENV(L,Emax,n,short = False,eps = 10**(-8)):
     Param = parameters(L,1,Emax,eps)
     if short:
         Param[-2] = Param[-2]/L
@@ -717,10 +769,10 @@ def checking_DVDM(L,Emax,n,short = False,eps = 10**(-8)):
     fname = "L="+str(L)+"Emax="+str(Emax)+"N="+str(n)
     if short:
         fname = fname + "short"
-    fname = fname + "DVDM.csv"
+    fname = fname + "ENVDVDM.csv"
 
     if not os.path.isfile(fname):
-        time,Rs,Is,Ns,Vs = DVDM_Glassey(Param,K,M,eps)
+        time,Rs,Is,Ns,Vs = DVDM_ENV(Param,K,M,eps)
         pd.DataFrame(time+Rs+Is+Ns+Vs).to_csv(fname)
 
     Rs,Is,Ns,Vs = [],[],[],[]
@@ -776,9 +828,9 @@ def checking_DVDM(L,Emax,n,short = False,eps = 10**(-8)):
     print("各要素の最大誤差比:",mrE,mrN,mrV)
     return (dx**2 + dt**2)**0.5#,eEs,eNs,eVs
 
-def DVDM_Simplified(Param,K,M,eps = 10**(-8),Stype = 1,NVtype = 1):
+def DVDM_ENVSimplified(Param,K,M,eps = 10**(-8),Stype = 1,NVtype = 1):
     L = Param[0]; T = Param[-2]
-    start = time.perf_counter()
+    start = time()
     dx = L/K; dt = T/M #print(dt,dx)
 
     # 数値解の記録
@@ -788,6 +840,10 @@ def DVDM_Simplified(Param,K,M,eps = 10**(-8),Stype = 1,NVtype = 1):
     if Stype == 2:
         R_now,I_now,N_now,N_next,V_now = initial_condition_solitons(Param[1],K,M,eps,NVtype)
         K *= 8
+
+    print("初期条件準備時間:",time()-start)
+    start = time()
+
     R_now = np.array(R_now); I_now = np.array(I_now); N_now = np.array(N_now); N_next = np.array(N_next); V_now = np.array(V_now)
     Rs.append(R_now); Is.append(I_now); Ns.append(N_now); Vs.append(V_now)
 
@@ -805,26 +861,27 @@ def DVDM_Simplified(Param,K,M,eps = 10**(-8),Stype = 1,NVtype = 1):
         dN = 0.5*dt*Dx - 0.25*dt*diags(N_now)
         dR_now = 0.25*dt*diags(R_now); dI_now = 0.25*dt*diags(I_now)
 
-        F0 = np.array([- R_now[i%K] + 0.5*dt*DI_now[i%K] if i//K == 0
-        else -I_now[i%K] - 0.5*dt*DR_now[i%K] if i//K == 1
-        else -N_now[i%K] - 0.5*dt*DV_now[i%K] if i//K == 2
-        else - V_now[i%K] - 0.5*dt*(N_now[i%K] + R_now[i%K]**2 + I_now[i%K]**2) for i in range(4*K)])
+        F0 = np.hstack([-R_now + 0.5*dt*DI_now,
+            -I_now - 0.5*dt*DR_now,
+            -N_now - 0.5*dt*DV_now,
+            -V_now - 0.5*dt*(N_now + R_now**2 + I_now**2)])
 
         if m > 0:
-            E = np.array([R_now[k]**2 + I_now[k]**2 for k in range(K)])
+            E = R_now**2 + I_now**2
             N_next = 2*np.array(ID.solve(N_now + E)) - N_before - 2*E
+
         D = dt*(0.5*Dx - 0.25*diags(N_now+N_next))
         A = bmat([[Ik,D],[-D,Ik]])
-        b = np.array(spsolve(A,np.array([2*R_now[i] if i < K else 2*I_now[i-K] for i in range(2*K)])))
+        b = np.array(spsolve(A,2*np.hstack([R_now,I_now])))
         R_next = -R_now + b[:K]; I_next = - I_now + b[K:]
 
-        V_next = [V_now[k]+ 0.5*dt*(N_next[k] + N_now[k] + R_now[k]**2 + R_next[k]**2 + I_now[k]**2 + I_next[k]**2) for k in range(K)]
+        V_next = V_now + 0.5*dt*(N_next + N_now + R_now**2 + R_next**2 + I_now**2 + I_next**2)
         DR_next = np.dot(DxM,R_next); DI_next = np.dot(DxM,I_next); DV_next = np.dot(DxM,V_next)
 
-        F = F0 + np.array([R_next[i%K] + 0.5*dt*DI_next[i%K] - 0.25*dt*(I_next[i%K] + I_now[i%K])*(N_next[i%K] + N_now[i%K]) if i//K == 0
-            else I_next[i%K] - 0.5*dt*DR_next[i%K] + 0.25*dt*(R_next[i%K] + R_now[i%K])*(N_next[i%K] + N_now[i%K]) if i//K == 1
-            else N_next[i%K] - 0.5*dt*DV_next[i%K] if i//K == 2
-            else V_next[i%K] - 0.5*dt*(N_next[i%K] + R_next[i%K]**2 + I_next[i%K]**2) for i in range(4*K)])
+        F = F0 + np.hstack([R_next + 0.5*dt*DI_next - 0.25*dt*(I_next + I_now)*(N_next + N_now),
+            I_next - 0.5*dt*DR_next + 0.25*dt*(R_next + R_now)*(N_next + N_now),
+            N_next - 0.5*dt*DV_next,
+            V_next - 0.5*dt*(N_next + R_next**2 + I_next**2)])
 
         dNN = dN - 0.25*dt*diags(N_next)
         dR = dt*diags(R_next); dI = dt*diags(I_next)
@@ -840,13 +897,15 @@ def DVDM_Simplified(Param,K,M,eps = 10**(-8),Stype = 1,NVtype = 1):
             R_next -= r[:K]; I_next -= r[K:2*K]; N_next -= r[2*K:3*K]; V_next -= r[3*K:]
             DR_next = np.dot(DxM,R_next); DI_next = np.dot(DxM,I_next); DV_next = np.dot(DxM,V_next)
 
-            F = F0 + np.array([R_next[i%K] + 0.5*dt*DI_next[i%K] - 0.25*dt*(I_next[i%K] + I_now[i%K])*(N_next[i%K] + N_now[i%K]) if i//K == 0
-                else I_next[i%K] - 0.5*dt*DR_next[i%K] + 0.25*dt*(R_next[i%K] + R_now[i%K])*(N_next[i%K] + N_now[i%K]) if i//K == 1
-                else N_next[i%K] - 0.5*dt*DV_next[i%K] if i//K == 2
-                else V_next[i%K] - 0.5*dt*(N_next[i%K] + R_next[i%K]**2 + I_next[i%K]**2) for i in range(4*K)])
+            F = F0 + np.hstack([R_next + 0.5*dt*DI_next - 0.25*dt*(I_next + I_now)*(N_next + N_now),
+                I_next - 0.5*dt*DR_next + 0.25*dt*(R_next + R_now)*(N_next + N_now),
+                N_next - 0.5*dt*DV_next,
+                V_next - 0.5*dt*(N_next + R_next**2 + I_next**2)])
+
             t += 1
             if t > 1000:
                 return "Failure"
+
         tmax = max(t,tmax)
         tsum = tsum + t
         Rs.append(R_next); Is.append(I_next); Ns.append(N_next); Vs.append(V_next)
@@ -857,10 +916,10 @@ def DVDM_Simplified(Param,K,M,eps = 10**(-8),Stype = 1,NVtype = 1):
             print("時刻:",m,"終点:",M)
     print("最大反復数:",tmax,"平均反復数:",tsum/M)
 
-    end = time.perf_counter()
-    print("S-DVDM実行時間:",end-start)
+    end = time()
+    print("S-DVDM(ENV)実行時間:",end-start)
 
-    WantToKnow = True #ノルム・エネルギーを知りたいとき
+    WantToKnow = False #ノルム・エネルギーを知りたいとき
     WantToPlot = False #ノルム・エネルギーを描画したいとき
     if WantToKnow:
         Norm = [norm(Rs[i],dx) + norm(Is[i],dx) for i in range(len(Rs))]
@@ -889,7 +948,7 @@ def DVDM_Simplified(Param,K,M,eps = 10**(-8),Stype = 1,NVtype = 1):
             plt.show()
     return [[str(end-start)]+[0 for i in range(len(Rs[0])-1)]],Rs,Is,Ns,Vs
 
-def checking_DVDM_Simplified(L,Emax,n,short = False,eps = 10**(-8)):
+def checking_DVDM_ENVSimplified(L,Emax,n,short = False,eps = 10**(-8)):
     Param = parameters(L,1,Emax,eps)
     if short:
         Param[-2] = Param[-2]/L
@@ -902,10 +961,10 @@ def checking_DVDM_Simplified(L,Emax,n,short = False,eps = 10**(-8)):
     fname = "L="+str(L)+"Emax="+str(Emax)+"N="+str(n)
     if short:
         fname = fname + "short"
-    fname = fname + "SDVDM.csv"
+    fname = fname + "ENVSDVDM.csv"
 
     if not os.path.isfile(fname):
-        time,Rs,Is,Ns,Vs = DVDM_Simplified(Param,K,M,eps)
+        time,Rs,Is,Ns,Vs = DVDM_ENVSimplified(Param,K,M,eps)
         pd.DataFrame(time+Rs+Is+Ns+Vs).to_csv(fname)
     Rs,Is,Ns,Vs = [],[],[],[]
     with open(fname) as f:
@@ -921,7 +980,7 @@ def checking_DVDM_Simplified(L,Emax,n,short = False,eps = 10**(-8)):
 
     tRs,tIs,tNs,tVs = [],[],[],[]
     fname = "L="+str(L)+"Emax="+str(Emax)+"N="+str(n)
-    if short:
+    if short != False:
         fname = fname + "short"
     fname = fname + "Analytic.csv"
 
@@ -963,7 +1022,7 @@ def checking_DVDM_Simplified(L,Emax,n,short = False,eps = 10**(-8)):
 
 def DVDM_EN(Param,K,M,eps = 10**(-8),Stype = 1,NVtype = 2):
     L = Param[0]; T = Param[-2]
-    start = time.perf_counter()
+    start = time()
     dx = L/K; dt = T/M #print(dt,dx)
 
     # 数値解の記録
@@ -976,6 +1035,10 @@ def DVDM_EN(Param,K,M,eps = 10**(-8),Stype = 1,NVtype = 2):
         # NVtype == 3: (N_t)_1 から数値的に計算される V0
         R_now,I_now,N_now,N_next,V_now = initial_condition_solitons(Param[1],K,M,eps,NVtype)
         K *= 8
+
+    print("初期条件準備時間:",time()-start)
+    start = time()
+
     R_now = np.array(R_now); I_now = np.array(I_now); N_now = np.array(N_now); N_next = np.array(N_next); V_now = np.array(V_now)
     Rs.append(R_now); Is.append(I_now); Ns.append(N_now); Vs.append(V_now)
 
@@ -984,28 +1047,28 @@ def DVDM_EN(Param,K,M,eps = 10**(-8),Stype = 1,NVtype = 2):
     DxM = (-2*np.identity(K) + np.eye(K,k=1) + np.eye(K,k=K-1) + np.eye(K,k=-1) + np.eye(K,k=-K+1))/dx**2
     Dx = csc_matrix(DxM)
     ID = splu(Ik-0.5*dt**2*Dx)
-
     dN = 0.5*dt*Dx - 0.25*dt*diags(N_now)
     dR_now = 0.25*dt*diags(R_now); dI_now = 0.25*dt*diags(I_now)
     DR_now = np.dot(DxM,R_now); DI_now = np.dot(DxM,I_now); DV_now = np.dot(DxM,V_now)
 
-    F0 = np.array([- R_now[i%K] + 0.5*dt*DI_now[i%K] if i//K == 0
-    else -I_now[i%K] - 0.5*dt*DR_now[i%K] if i//K == 1
-    else -N_now[i%K] - 0.5*dt*DV_now[i%K] if i//K == 2
-    else - V_now[i%K] - 0.5*dt*(N_now[i%K] + R_now[i%K]**2 + I_now[i%K]**2) for i in range(4*K)])
+    F0 = np.hstack([-R_now + 0.5*dt*DI_now,
+        -I_now - 0.5*dt*DR_now,
+        -N_now - 0.5*dt*DV_now,
+        -V_now - 0.5*dt*(N_now + R_now**2 + I_now**2)])
 
     D = dt*(0.5*Dx - 0.25*diags(N_now + N_next))
     A = bmat([[Ik,D],[-D,Ik]])
-    b = np.array(spsolve(A,np.array([2*R_now[i] if i < K else 2*I_now[i-K] for i in range(2*K)])))
+    t0 = time()
+    b = np.array(spsolve(A,2*np.hstack([R_now,I_now])))
     R_next = - R_now + b[:K]; I_next = - I_now + b[K:]
 
-    V_next = [V_now[k]+ 0.5*dt*(N_next[k] + N_now[k] + R_now[k]**2 + R_next[k]**2 + I_now[k]**2 + I_next[k]**2) for k in range(K)]
+    V_next = V_now + 0.5*dt*(N_next + N_now + R_now**2 + R_next**2 + I_now**2 + I_next**2)
     DR_next = np.dot(DxM,R_next); DI_next = np.dot(DxM,I_next); DV_next = np.dot(DxM,V_next)
 
-    F = F0 + np.array([R_next[i%K] + 0.5*dt*DI_next[i%K] - 0.25*dt*(I_next[i%K] + I_now[i%K])*(N_next[i%K] + N_now[i%K]) if i//K == 0
-        else I_next[i%K] - 0.5*dt*DR_next[i%K] + 0.25*dt*(R_next[i%K] + R_now[i%K])*(N_next[i%K] + N_now[i%K]) if i//K == 1
-        else N_next[i%K] - 0.5*dt*DV_next[i%K] if i//K == 2
-        else V_next[i%K] - 0.5*dt*(N_next[i%K] + R_next[i%K]**2 + I_next[i%K]**2) for i in range(4*K)])
+    F = F0 + np.hstack([R_next + 0.5*dt*DI_next - 0.25*dt*(I_next + I_now)*(N_next + N_now),
+        I_next - 0.5*dt*DR_next + 0.25*dt*(R_next + R_now)*(N_next + N_now),
+        N_next - 0.5*dt*DV_next,
+        V_next - 0.5*dt*(N_next + R_next**2 + I_next**2)])
     #print(m,"Start:",norm(F,dx)**0.5)
 
     while norm(F,dx)**0.5 >= eps:
@@ -1018,14 +1081,16 @@ def DVDM_EN(Param,K,M,eps = 10**(-8),Stype = 1,NVtype = 2):
         R_next -= r[:K]; I_next -= r[K:2*K]; N_next -= r[2*K:3*K]; V_next -= r[3*K:]
         DR_next = np.dot(DxM,R_next); DI_next = np.dot(DxM,I_next); DV_next = np.dot(DxM,V_next)
 
-        F = F0 + np.array([R_next[i%K] + 0.5*dt*DI_next[i%K] - 0.25*dt*(I_next[i%K] + I_now[i%K])*(N_next[i%K] + N_now[i%K]) if i//K == 0
-            else I_next[i%K] - 0.5*dt*DR_next[i%K] + 0.25*dt*(R_next[i%K] + R_now[i%K])*(N_next[i%K] + N_now[i%K]) if i//K == 1
-            else N_next[i%K] - 0.5*dt*DV_next[i%K] if i//K == 2
-            else V_next[i%K] - 0.5*dt*(N_next[i%K] + R_next[i%K]**2 + I_next[i%K]**2) for i in range(4*K)])
+        F = F0 + np.hstack([R_next + 0.5*dt*DI_next - 0.25*dt*(I_next + I_now)*(N_next + N_now),
+            I_next - 0.5*dt*DR_next + 0.25*dt*(R_next + R_now)*(N_next + N_now),
+            N_next - 0.5*dt*DV_next,
+            V_next - 0.5*dt*(N_next + R_next**2 + I_next**2)])
+
         t += 1
         if t > 1000:
             return "Failure"
-    V_next = [V_now[k]+ 0.5*dt*(N_next[k] + N_now[k] + R_now[k]**2 + R_next[k]**2 + I_now[k]**2 + I_next[k]**2) for k in range(K)]
+
+    V_next = V_now + 0.5*dt*(N_next + N_now + R_now**2 + R_next**2 + I_now**2 + I_next**2)
     Rs.append(R_next); Is.append(I_next); Ns.append(N_next); Vs.append(V_next)
     R_before = R_now; I_before = I_now; N_before = N_now
     R_now = R_next; I_now = I_next; N_now = N_next; V_now = V_next
@@ -1042,27 +1107,26 @@ def DVDM_EN(Param,K,M,eps = 10**(-8),Stype = 1,NVtype = 2):
         dN = 0.5*dt*Dx - 0.25*dt*diags(N_now)
         dR_now = 0.25*dt*diags(R_now); dI_now = 0.25*dt*diags(I_now)
 
-        F0 = np.array([ -R_now[i%K] + DI1_now[i%K] if i//K == 0
-        else -I_now[i%K] - DR1_now[i%K] if i//K == 1
-        else -2*N_now[i%K] + N_before[i%K] -2*DN2_now[i%K] - DN2_before[i%K] -2*DR2_now[i%K] - DR2_before[i%K] -2*DI2_now[i%K] - DI2_before[i%K] for i in range(3*K)])
+        F0 = np.hstack([-R_now + DI1_now,-I_now - DR1_now,
+        -2*N_now + N_before -2*DN2_now - DN2_before -2*DR2_now - DR2_before -2*DI2_now - DI2_before])
 
-        E = np.array([R_now[k]**2 + I_now[k]**2 for k in range(K)])
+        E = R_now**2 + I_now**2
         N_next = 2*np.array(ID.solve(N_now + E)) - N_before - 2*E
 
         D = dt*(0.5*Dx - 0.25*diags(N_now + N_next))
         A = bmat([[Ik,D],[-D,Ik]],'csc')
-        b = np.array(spsolve(A,np.array([2*R_now[i] if i < K else 2*I_now[i-K] for i in range(2*K)])))
+        b = np.array(spsolve(A,2*np.hstack([R_now,I_now])))
         R_next = -R_now + b[:K]; I_next = -I_now + b[K:]
 
         DR1_next = 0.5*dt*np.dot(DxM,R_next); DR2_next = 0.25*dt**2*np.dot(DxM,R_next**2)
         DI1_next = 0.5*dt*np.dot(DxM,I_next); DI2_next = 0.25*dt**2*np.dot(DxM,I_next**2)
         DN2_next = 0.25*dt**2*np.dot(DxM,N_next)
 
-        F = F0 + np.array([R_next[i%K] + DI1_next[i%K] - 0.25*dt*(I_next[i%K] + I_now[i%K])*(N_next[i%K] + N_now[i%K]) if i//K == 0
-            else I_next[i%K] - DR1_next[i%K] + 0.25*dt*(R_next[i%K] + R_now[i%K])*(N_next[i%K] + N_now[i%K]) if i//K == 1
-            else N_next[i%K] - DN2_next[i%K] - DR2_next[i%K] - DI2_next[i%K] for i in range(3*K)])
+        F = F0 + np.hstack([R_next + DI1_next - 0.25*dt*(I_next + I_now)*(N_next + N_now),
+            I_next - DR1_next + 0.25*dt*(R_next + R_now)*(N_next + N_now),
+            N_next - DN2_next - DR2_next - DI2_next])
         #print(m,"Start:",norm(F,dx)**0.5)
-
+        print(norm(F,dx)**0.5)
         while norm(F,dx)**0.5 >= eps:
             #print(norm(F,dx)**0.5)
             dNN = dN - 0.25*dt*diags(N_next)
@@ -1076,9 +1140,9 @@ def DVDM_EN(Param,K,M,eps = 10**(-8),Stype = 1,NVtype = 2):
             DI1_next = 0.5*dt*np.dot(DxM,I_next); DI2_next = 0.25*dt**2*np.dot(DxM,I_next**2)
             DN2_next = 0.25*dt**2*np.dot(DxM,N_next)
 
-            F = F0 + np.array([R_next[i%K] + DI1_next[i%K] - 0.25*dt*(I_next[i%K] + I_now[i%K])*(N_next[i%K] + N_now[i%K]) if i//K == 0
-                else I_next[i%K] - DR1_next[i%K] + 0.25*dt*(R_next[i%K] + R_now[i%K])*(N_next[i%K] + N_now[i%K]) if i//K == 1
-                else N_next[i%K] - DN2_next[i%K] - DR2_next[i%K] - DI2_next[i%K] for i in range(3*K)])
+            F = F0 + np.hstack([R_next + DI1_next - 0.25*dt*(I_next + I_now)*(N_next + N_now),
+                I_next - DR1_next + 0.25*dt*(R_next + R_now)*(N_next + N_now),
+                N_next - DN2_next - DR2_next - DI2_next])
 
             t += 1
             if t > 1000:
@@ -1086,7 +1150,7 @@ def DVDM_EN(Param,K,M,eps = 10**(-8),Stype = 1,NVtype = 2):
 
         tmax = max(t,tmax)
         tsum = tsum + t
-        V_next = [V_now[k]+ 0.5*dt*(N_next[k] + N_now[k] + R_now[k]**2 + R_next[k]**2 + I_now[k]**2 + I_next[k]**2) for k in range(K)]
+        V_next = V_now + 0.5*dt*(N_next + N_now + R_now**2 + R_next**2 + I_now**2 + I_next**2)
         Rs.append(R_next); Is.append(I_next); Ns.append(N_next); Vs.append(V_next)
         R_before = R_now; R_now = R_next; I_before = I_now; I_now = I_next
         N_before = N_now; N_now = N_next; V_now = V_next
@@ -1097,10 +1161,10 @@ def DVDM_EN(Param,K,M,eps = 10**(-8),Stype = 1,NVtype = 2):
             print("時刻:",m,"終点:",M)
     print("最大反復数:",tmax,"平均反復数:",tsum/(M-1))
 
-    end = time.perf_counter()
+    end = time()
     print("DVDM(EN)実行時間:",end-start)
 
-    WantToKnow = True #ノルム・エネルギーを知りたいとき
+    WantToKnow = False #ノルム・エネルギーを知りたいとき
     WantToPlot = False #ノルム・エネルギーを描画したいとき
     if WantToKnow:
         Norm = [norm(Rs[i],dx) + norm(Is[i],dx) for i in range(len(Rs))]
@@ -1203,7 +1267,7 @@ def checking_DVDM_EN(L,Emax,n,short = False,eps = 10**(-8)):
 
 def DVDM_ENSimplified(Param,K,M,eps = 10**(-8),Stype = 1,NVtype = 2):
     L = Param[0]; T = Param[-2]
-    start = time.perf_counter()
+    start = time()
     dx = L/K; dt = T/M #print(dt,dx)
 
     # 数値解の記録
@@ -1216,6 +1280,10 @@ def DVDM_ENSimplified(Param,K,M,eps = 10**(-8),Stype = 1,NVtype = 2):
         # NVtype == 3: (N_t)_1 から数値的に計算される V0
         R_now,I_now,N_now,N_next,V_now = initial_condition_solitons(Param[1],K,M,eps,NVtype)
         K *= 8
+
+    print("初期条件準備時間:",time()-start)
+    start = time()
+
     R_now = np.array(R_now); I_now = np.array(I_now); N_now = np.array(N_now); N_next = np.array(N_next); V_now = np.array(V_now)
     Rs.append(R_now); Is.append(I_now); Ns.append(N_now); Vs.append(V_now)
 
@@ -1229,23 +1297,23 @@ def DVDM_ENSimplified(Param,K,M,eps = 10**(-8),Stype = 1,NVtype = 2):
     dR_now = 0.25*dt*diags(R_now); dI_now = 0.25*dt*diags(I_now)
     DR_now = np.dot(DxM,R_now); DI_now = np.dot(DxM,I_now); DV_now = np.dot(DxM,V_now)
 
-    F0 = np.array([- R_now[i%K] + 0.5*dt*DI_now[i%K] if i//K == 0
-    else -I_now[i%K] - 0.5*dt*DR_now[i%K] if i//K == 1
-    else -N_now[i%K] - 0.5*dt*DV_now[i%K] if i//K == 2
-    else - V_now[i%K] - 0.5*dt*(N_now[i%K] + R_now[i%K]**2 + I_now[i%K]**2) for i in range(4*K)])
+    F0 = np.hstack([-R_now + 0.5*dt*DI_now,
+        -I_now - 0.5*dt*DR_now,
+        -N_now - 0.5*dt*DV_now,
+        -V_now - 0.5*dt*(N_now + R_now**2 + I_now**2)])
 
     D = dt*(0.5*Dx - 0.25*diags(N_now + N_next))
     A = bmat([[Ik,D],[-D,Ik]],'csc')
-    b = np.array(spsolve(A,np.array([2*R_now[i] if i < K else 2*I_now[i-K] for i in range(2*K)])))
+    b = np.array(spsolve(A,2*np.hstack([R_now,I_now])))
     R_next = -R_now + b[:K]; I_next = -I_now + b[K:]
 
-    V_next = [V_now[k]+ 0.5*dt*(N_next[k] + N_now[k] + R_now[k]**2 + R_next[k]**2 + I_now[k]**2 + I_next[k]**2) for k in range(K)]
+    V_next = V_now + 0.5*dt*(N_next + N_now + R_now**2 + R_next**2 + I_now**2 + I_next**2)
     DR_next = np.dot(DxM,R_next); DI_next = np.dot(DxM,I_next); DV_next = np.dot(DxM,V_next)
 
-    F = F0 + np.array([R_next[i%K] + 0.5*dt*DI_next[i%K] - 0.25*dt*(I_next[i%K] + I_now[i%K])*(N_next[i%K] + N_now[i%K]) if i//K == 0
-        else I_next[i%K] - 0.5*dt*DR_next[i%K] + 0.25*dt*(R_next[i%K] + R_now[i%K])*(N_next[i%K] + N_now[i%K]) if i//K == 1
-        else N_next[i%K] - 0.5*dt*DV_next[i%K] if i//K == 2
-        else V_next[i%K] - 0.5*dt*(N_next[i%K] + R_next[i%K]**2 + I_next[i%K]**2) for i in range(4*K)])
+    F = F0 + np.hstack([R_next + 0.5*dt*DI_next - 0.25*dt*(I_next + I_now)*(N_next + N_now),
+        I_next - 0.5*dt*DR_next + 0.25*dt*(R_next + R_now)*(N_next + N_now),
+        N_next - 0.5*dt*DV_next,
+        V_next - 0.5*dt*(N_next + R_next**2 + I_next**2)])
     #print(m,"Start:",norm(F,dx)**0.5)
     dNN = dN - 0.25*dt*diags(N_next)
     dR = dt*diags(R_next); dI = dt*diags(I_next)
@@ -1259,14 +1327,15 @@ def DVDM_ENSimplified(Param,K,M,eps = 10**(-8),Stype = 1,NVtype = 2):
         R_next -= r[:K]; I_next -= r[K:2*K]; N_next -= r[2*K:3*K]; V_next -= r[3*K:]
         DR_next = np.dot(DxM,R_next); DI_next = np.dot(DxM,I_next); DV_next = np.dot(DxM,V_next)
 
-        F = F0 + np.array([R_next[i%K] + 0.5*dt*DI_next[i%K] - 0.25*dt*(I_next[i%K] + I_now[i%K])*(N_next[i%K] + N_now[i%K]) if i//K == 0
-            else I_next[i%K] - 0.5*dt*DR_next[i%K] + 0.25*dt*(R_next[i%K] + R_now[i%K])*(N_next[i%K] + N_now[i%K]) if i//K == 1
-            else N_next[i%K] - 0.5*dt*DV_next[i%K] if i//K == 2
-            else V_next[i%K] - 0.5*dt*(N_next[i%K] + R_next[i%K]**2 + I_next[i%K]**2) for i in range(4*K)])
+        F = F0 + np.hstack([R_next + 0.5*dt*DI_next - 0.25*dt*(I_next + I_now)*(N_next + N_now),
+            I_next - 0.5*dt*DR_next + 0.25*dt*(R_next + R_now)*(N_next + N_now),
+            N_next - 0.5*dt*DV_next,
+            V_next - 0.5*dt*(N_next + R_next**2 + I_next**2)])
         t += 1
         if t > 1000:
             return "Failure"
-    V_next = [V_now[k]+ 0.5*dt*(N_next[k] + N_now[k] + R_now[k]**2 + R_next[k]**2 + I_now[k]**2 + I_next[k]**2) for k in range(K)]
+
+    V_next = V_now + 0.5*dt*(N_next + N_now + R_now**2 + R_next**2 + I_now**2 + I_next**2)
     Rs.append(R_next); Is.append(I_next); Ns.append(N_next); Vs.append(V_next)
     R_before = np.array(R_now); I_before = np.array(I_now); N_before = np.array(N_now)
     R_now = R_next; I_now = I_next; N_now = N_next; V_now = V_next
@@ -1283,25 +1352,24 @@ def DVDM_ENSimplified(Param,K,M,eps = 10**(-8),Stype = 1,NVtype = 2):
         dN = 0.5*dt*Dx - 0.25*dt*diags(N_now)
         dR_now = 0.25*dt*diags(R_now); dI_now = 0.25*dt*diags(I_now)
 
-        F0 = np.array([ -R_now[i%K] + DI1_now[i%K] if i//K == 0
-        else -I_now[i%K] - DR1_now[i%K] if i//K == 1
-        else -2*N_now[i%K] + N_before[i%K] -2*DN2_now[i%K] - DN2_before[i%K] -2*DR2_now[i%K] - DR2_before[i%K] -2*DI2_now[i%K] - DI2_before[i%K] for i in range(3*K)])
+        F0 = np.hstack([-R_now + DI1_now,-I_now - DR1_now,
+        -2*N_now + N_before -2*DN2_now - DN2_before -2*DR2_now - DR2_before -2*DI2_now - DI2_before])
 
-        E = np.array([R_now[k]**2 + I_now[k]**2 for k in range(K)])
+        E = R_now**2 + I_now**2
         N_next = 2*np.array(ID.solve(N_now + E)) - N_before - 2*E
 
         D = dt*(0.5*Dx - 0.25*diags(N_now + N_next))
         A = bmat([[Ik,D],[-D,Ik]],'csc')
-        b = np.array(spsolve(A,2*np.array([R_now[i] if i < K else I_now[i-K] for i in range(2*K)])))
+        b = np.array(spsolve(A,2*np.hstack([R_now,I_now])))
         R_next = -R_now + b[:K]; I_next = -I_now + b[K:]
 
         DR1_next = 0.5*dt*np.dot(DxM,R_next); DR2_next = 0.25*dt**2*np.dot(DxM,R_next**2)
         DI1_next = 0.5*dt*np.dot(DxM,I_next); DI2_next = 0.25*dt**2*np.dot(DxM,I_next**2)
         DN2_next = 0.25*dt**2*np.dot(DxM,N_next)
 
-        F = F0 + np.array([R_next[i%K] + DI1_next[i%K] - 0.25*dt*(I_next[i%K] + I_now[i%K])*(N_next[i%K] + N_now[i%K]) if i//K == 0
-            else I_next[i%K] - DR1_next[i%K] + 0.25*dt*(R_next[i%K] + R_now[i%K])*(N_next[i%K] + N_now[i%K]) if i//K == 1
-            else N_next[i%K] - DN2_next[i%K] - DR2_next[i%K] - DI2_next[i%K] for i in range(3*K)])
+        F = F0 + np.hstack([R_next + DI1_next - 0.25*dt*(I_next + I_now)*(N_next + N_now),
+            I_next - DR1_next + 0.25*dt*(R_next + R_now)*(N_next + N_now),
+            N_next - DN2_next - DR2_next - DI2_next])
 
         dNN = dN - 0.25*dt*diags(N_next)
         dR = dt*diags(R_next); dI = dt*diags(I_next)
@@ -1318,9 +1386,9 @@ def DVDM_ENSimplified(Param,K,M,eps = 10**(-8),Stype = 1,NVtype = 2):
             DI1_next = 0.5*dt*np.dot(DxM,I_next); DI2_next = 0.25*dt**2*np.dot(DxM,I_next**2)
             DN2_next = 0.25*dt**2*np.dot(DxM,N_next)
 
-            F = F0 + np.array([R_next[i%K] + DI1_next[i%K] - 0.25*dt*(I_next[i%K] + I_now[i%K])*(N_next[i%K] + N_now[i%K]) if i//K == 0
-                else I_next[i%K] - DR1_next[i%K] + 0.25*dt*(R_next[i%K] + R_now[i%K])*(N_next[i%K] + N_now[i%K]) if i//K == 1
-                else N_next[i%K] - DN2_next[i%K] - DR2_next[i%K] - DI2_next[i%K] for i in range(3*K)])
+            F = F0 + np.hstack([R_next + DI1_next - 0.25*dt*(I_next + I_now)*(N_next + N_now),
+                I_next - DR1_next + 0.25*dt*(R_next + R_now)*(N_next + N_now),
+                N_next - DN2_next - DR2_next - DI2_next])
 
             t += 1
             if t > 1000:
@@ -1328,7 +1396,7 @@ def DVDM_ENSimplified(Param,K,M,eps = 10**(-8),Stype = 1,NVtype = 2):
 
         tmax = max(t,tmax)
         tsum = tsum + t
-        V_next = [V_now[k]+ 0.5*dt*(N_next[k] + N_now[k] + R_now[k]**2 + R_next[k]**2 + I_now[k]**2 + I_next[k]**2) for k in range(K)]
+        V_next = V_now + 0.5*dt*(N_next + N_now + R_now**2 + R_next**2 + I_now**2 + I_next**2)
         Rs.append(R_next); Is.append(I_next); Ns.append(N_next); Vs.append(V_next)
         R_before = R_now; R_now = R_next; I_before = I_now; I_now = I_next
         N_before = N_now; N_now = N_next; V_now = V_next
@@ -1339,7 +1407,7 @@ def DVDM_ENSimplified(Param,K,M,eps = 10**(-8),Stype = 1,NVtype = 2):
             print("時刻:",m,"終点:",M)
     print("最大反復数:",tmax,"平均反復数:",tsum/(M-1))
 
-    end = time.perf_counter()
+    end = time()
     print("S-DVDM(EN)実行時間:",end-start)
 
     WantToKnow = True #ノルム・エネルギーを知りたいとき
@@ -1363,18 +1431,20 @@ def DVDM_ENSimplified(Param,K,M,eps = 10**(-8),Stype = 1,NVtype = 2):
 
         if WantToPlot:
             Time = [i for i in range(len(Rs))]
-            plt.plot(Time,dNorm,label="Norm")
-            plt.plot(Time,dEnergy,label="Energy")
+            plt.plot(Time,dEnergy,label="Energy",ls = "-",color="k")
             plt.xlabel("time")
-            plt.ylabel("errors of Norm and Energy")
+            plt.ylabel("errors of Energy")
             plt.legend()
             plt.show()
     return [[str(end-start)]+[0 for i in range(len(Rs[0])-1)]],Rs,Is,Ns,Vs
 
 def checking_DVDM_ENSimplified(L,Emax,n,short = False,eps = 10**(-8)):
     Param = parameters(L,1,Emax,eps)
-    if short:
+    if short == True:
         Param[-2] = Param[-2]/L
+    else:
+        if short != False:
+            Param[-2] = Param[-2]*short
     T = Param[-2]
     K = math.floor(L*n); M = math.floor(T*n)
     dx = L/K; dt = T/M
@@ -1382,8 +1452,11 @@ def checking_DVDM_ENSimplified(L,Emax,n,short = False,eps = 10**(-8)):
     Rs,Is,Ns,Vs = [],[],[],[]
 
     fname = "L="+str(L)+"Emax="+str(Emax)+"N="+str(n)
-    if short:
+    if short == True:
         fname = fname + "short"
+    else:
+        if short != False:
+            fname = fname + str(short)
     fname = fname + "ENSDVDM.csv"
 
     if not os.path.isfile(fname):
@@ -1403,8 +1476,11 @@ def checking_DVDM_ENSimplified(L,Emax,n,short = False,eps = 10**(-8)):
 
     tRs,tIs,tNs,tVs = [],[],[],[]
     fname = "L="+str(L)+"Emax="+str(Emax)+"N="+str(n)
-    if short:
+    if short == True:
         fname = fname + "short"
+    else:
+        if short != False:
+            fname = fname + str(short)
     fname = fname + "Analytic.csv"
 
     if not os.path.isfile(fname):
@@ -1430,15 +1506,28 @@ def checking_DVDM_ENSimplified(L,Emax,n,short = False,eps = 10**(-8)):
     eEs = []; eNs = []; eVs = []
     rEs = []; rNs = []; rVs = []
 
-    RANGE = [i for i in range(len(tRs))]
-    #RANGE = [len(Rs)-1] # 最終時刻での誤差だけ知りたいとき
     meE = 0; meN = 0; meV = 0; mrE = 0; mrN = 0; mrV = 0
-    for i in RANGE:
+    WantToPlot = True
+    if WantToPlot:
+        meEs = [0]; meNs = [0]; TIMES = [0]
+    for i in range(len(tRs)):
         tnorm = (norm(tRs[i],dx) + norm(tIs[i],dx))**0.5
 
         eE = (dist(Rs[i],tRs[i],dx)**2+dist(Is[i],tIs[i],dx)**2)**0.5; eN = dist(Ns[i],tNs[i],dx); eV = dist(Vs[i],tVs[i],dx)
         meE = max(meE,eE); meN = max(meN,eN); meV = max(meV,eV)
         mrE = max(mrE,eE/tnorm); mrN = max(mrN,eN/(norm(tNs[i],dx)**0.5)); mrV = max(mrV,eV/(norm(tVs[i],dx)**0.5))
+        if WantToPlot:
+            meEs.append(meE); meNs.append(meN); TIMES.append((i+1)*dt)
+    if WantToPlot:
+        fig = plt.figure()
+        axR = fig.add_subplot(1, 2, 1)
+        axN = fig.add_subplot(1, 2, 2)
+        axR.plot(TIMES,meEs,label="D,E",ls = "-",color="k")
+        axN.plot(TIMES,meNs,label="D,N",ls = "-",color="k")
+        axR.legend(); axN.legend()#; axV.legend()
+        axR.set_xlabel("t"); axN.set_xlabel("t")
+        axR.set_ylabel("max_error"); axN.set_xlabel("max_error")
+        plt.show()
     print("各要素の最大誤差:",meE,meN,meV)
     print("各要素の最大誤差比:",mrE,mrN,mrV)
     return (dx**2 + dt**2)**0.5#,eEs,eNs,eVs
@@ -1446,8 +1535,11 @@ def checking_DVDM_ENSimplified(L,Emax,n,short = False,eps = 10**(-8)):
 # Glassey,DVDM,解析解を T/times ごとに比較
 def comparing(L,Emax,n,eps = 10**(-8),times = 1,short = False):
     Param = parameters(L,1,Emax,eps)
-    if short:
+    if short == True:
         Param[-2] = Param[-2]/L
+    else:
+        if short != False:
+            Param[-2] = Param[-2]*short
     T = Param[-2]
     K = math.floor(L*n); M = math.floor(T*n)
     dx = L/K; dt = T/M
@@ -1464,13 +1556,17 @@ def comparing(L,Emax,n,eps = 10**(-8),times = 1,short = False):
     Vindex = [3*M+4+i*M//times for i in range(times+1)]
 
     fname = "L="+str(L)+"Emax="+str(Emax)+"N="+str(n)
-    if short:
+    if short == True:
         fname = fname + "short"
+    else:
+        if short != False:
+            fname = fname + str(short)
     fname = fname + "Glassey.csv"
 
     if not os.path.isfile(fname):
         time,Rs,Is,Ns = Glassey(Param,K,M)
         pd.DataFrame(time+Rs+Is+Ns).to_csv(fname)
+        Rs,Is,Ns = [],[],[]
     with open(fname) as f:
         for row in csv.reader(f, quoting=csv.QUOTE_NONNUMERIC):
             if row[0] in Rindex:
@@ -1481,13 +1577,17 @@ def comparing(L,Emax,n,eps = 10**(-8),times = 1,short = False):
                 NG.append(np.array(row[1:]))
 
     fname = "L="+str(L)+"Emax="+str(Emax)+"N="+str(n)
-    if short:
+    if short == True:
         fname = fname + "short"
-    fname = fname + "DVDM.csv"
+    else:
+        if short != False:
+            fname = fname + str(short)
+    fname = fname + "ENSDVDM.csv"
 
     if not os.path.isfile(fname):
-        time,Rs,Is,Ns,Vs = DVDM_Glassey(Param,K,M,eps)
+        time,Rs,Is,Ns,Vs = DVDM_ENSimplified(Param,K,M,eps)
         pd.DataFrame(time+Rs+Is+Ns+Vs).to_csv(fname)
+        Rs,Is,Ns,Vs = [],[],[],[]
     with open(fname) as f:
         for row in csv.reader(f, quoting=csv.QUOTE_NONNUMERIC):
             if row[0] in Rindex:
@@ -1530,6 +1630,127 @@ def comparing(L,Emax,n,eps = 10**(-8),times = 1,short = False):
         ax[0].legend(); ax[1].legend(); ax[2].legend(); ax[3].legend()
     plt.show()
 
+def comparing_error(L,Emax,n,eps = 10**(-8),short = False):
+    Param = parameters(L,1,Emax,eps)
+    if short == True:
+        Param[-2] = Param[-2]/L
+    else:
+        if short != False:
+            Param[-2] = Param[-2]*short
+    T = Param[-2]
+    K = math.floor(L*n); M = math.floor(T*n)
+    dx = L/K; dt = T/M
+
+    if n == 10 and False:
+        tNorm,tEnergy = true_invariants(Emax,10**(-3))
+        print("保存量真値:",tNorm,tEnergy)
+
+    RG,IG,NG = [],[],[]
+    RD,ID,ND,VD = [],[],[],[]
+
+    fname = "L="+str(L)+"Emax="+str(Emax)+"N="+str(n)
+    if short == True:
+        fname = fname + "short"
+    else:
+        if short != False:
+            fname = fname + str(short)
+    fname = fname + "Glassey.csv"
+    print(fname)
+
+    if not os.path.isfile(fname):
+        time,RG,IG,NG = Glassey(Param,K,M)
+        pd.DataFrame(time+RG+IG+NG).to_csv(fname)
+    else:
+        with open(fname) as f:
+            for row in csv.reader(f, quoting=csv.QUOTE_NONNUMERIC):
+                if row[0] in [i+1 for i in range(M+1)]:
+                    RG.append(np.array(row[1:]))
+                if row[0] in [M+2+i for i in range(M+1)]:
+                    IG.append(np.array(row[1:]))
+                if row[0] in [2*M+3+i for i in range(M+1)]:
+                    NG.append(np.array(row[1:]))
+
+    fname = "L="+str(L)+"Emax="+str(Emax)+"N="+str(n)
+    if short == True:
+        fname = fname + "short"
+    else:
+        if short != False:
+            fname = fname + str(short)
+    fname = fname + "ENSDVDM.csv"
+    print(fname)
+
+    if not os.path.isfile(fname):
+        time,RD,ID,ND,VD = DVDM_ENSimplified(Param,K,M,eps)
+        pd.DataFrame(time+RD+ID+ND+VD).to_csv(fname)
+    else:
+        with open(fname) as f:
+            for row in csv.reader(f, quoting=csv.QUOTE_NONNUMERIC):
+                if row[0] in [i+1 for i in range(M+1)]:
+                    RD.append(np.array(row[1:]))
+                if row[0] in [M+2+i for i in range(M+1)]:
+                    ID.append(np.array(row[1:]))
+                if row[0] in [2*M+3+i for i in range(M+1)]:
+                    ND.append(np.array(row[1:]))
+                if row[0] in [3*M+4+i for i in range(M+1)]:
+                    VD.append(np.array(row[1:]))
+
+    tRs,tIs,tNs,tVs = [],[],[],[]
+    fname = "L="+str(L)+"Emax="+str(Emax)+"N="+str(n)
+    if short == True:
+        fname = fname + "short"
+    else:
+        if short != False:
+            fname = fname + str(short)
+    fname = fname + "Analytic.csv"
+    print(fname)
+
+    if os.path.isfile(fname):
+        with open(fname) as f:
+            for row in csv.reader(f, quoting=csv.QUOTE_NONNUMERIC):
+                if row[0] in [i for i in range(M+1)]:
+                    tRs.append(np.array(row[1:]))
+                if row[0] in [M+1+i for i in range(M+1)]:
+                    tIs.append(np.array(row[1:]))
+                if row[0] in [2*M+2+i for i in range(M+1)]:
+                    tNs.append(np.array(row[1:]))
+                if row[0] in [3*M+3+i for i in range(M+1)]:
+                    tVs.append(np.array(row[1:]))
+    else:
+        for i in range(M+1):
+            if i%10 == 0:
+                print(i,M)
+            tR,tI,tN,_,tV,_ = analytical_solutions(Param,i*dt,K)
+            tRs.append(tR); tIs.append(tI); tNs.append(tN); tVs.append(tV)
+        pd.DataFrame(tRs+tIs+tNs+tVs).to_csv(fname)
+
+    print("(dx**2 + dt**2)**0.5:",(dx**2 + dt**2)**0.5)
+    meEG = 0; mrEG = 0; meNG = 0; mrNG = 0
+    meED = 0; mrED = 0; meND = 0; mrND = 0
+    meEGs = [0]; meNGs = [0]; meEDs = [0]; meNDs = [0]
+    TIMES = [0]
+    for i in range(len(tRs)):
+        tnorm = (norm(tRs[i],dx) + norm(tIs[i],dx))**0.5
+
+        eEG = (dist(RG[i],tRs[i],dx)**2+dist(IG[i],tIs[i],dx)**2)**0.5; eNG = dist(NG[i],tNs[i],dx)
+        eED = (dist(RD[i],tRs[i],dx)**2+dist(ID[i],tIs[i],dx)**2)**0.5; eND = dist(ND[i],tNs[i],dx)
+        meEG = max(meEG,eEG); meNG = max(meNG,eNG)
+        meED = max(meED,eED); meND = max(meND,eND)
+        mrEG = max(mrEG,eEG/tnorm); mrNG = max(mrNG,eNG/(norm(tNs[i],dx)**0.5))
+        mrED = max(mrED,eED/tnorm); mrND = max(mrND,eND/(norm(tNs[i],dx)**0.5))
+        meEGs.append(meEG); meNGs.append(meNG); TIMES.append((i+1)*dt)
+        meEDs.append(meED); meNDs.append(meND)
+    fig = plt.figure()
+    axR = fig.add_subplot(1, 2, 1)
+    axN = fig.add_subplot(1, 2, 2)
+    axR.plot(TIMES,meEGs,label="G,E",ls = "-",color="k")
+    axR.plot(TIMES,meEDs,label="D,E",ls = "--",color="k")
+    axN.plot(TIMES,meNGs,label="G,N",ls = "-",color="k")
+    axN.plot(TIMES,meNDs,label="D,N",ls = "--",color="k")
+    axR.legend(); axN.legend()
+    axR.set_xlabel("t"); axN.set_xlabel("t")
+    axR.set_ylabel("max_error"); axN.set_ylabel("max_error")
+    plt.show()
+
 #initial_condition(Param,K,M,10**(-8),1)
 #initial_condition_solitons(Emax,K,M,10**(-8),1,3)
 if False:
@@ -1557,14 +1778,22 @@ if False:
 #print(checking_DVDM(20,1,10))
 #print(checking_DVDM_Simplified(20,5,160))
 #print(checking_DVDM_ENSimplified(20,2,20))
-Emax = 1; n = 10; Param = parameters(20,1,Emax,10**(-8)); T = Param[-2]; K = math.floor(20*n); M = math.floor(T*n)
-print(Emax,n)
-Glassey(Param,K,M)
-DVDM_Glassey(Param,K,M)
-DVDM_Simplified(Param,K,M)
-DVDM_EN(Param,K,M)
-DVDM_ENSimplified(Param,K,M)
-#checking_DVDM_ENSimplified(20,Emax,n)
+
+Emax = 10; n = 10; Param = parameters(20,1,Emax,10**(-8)); T = Param[-2]
+#T = T/20; Param[-2] = T
+#T = T*20; Param[-2] = T
+K = math.floor(20*n); M = math.floor(T*n)
+
+#print(Emax,n)
+#Glassey(Param,K,M)
+#DVDM_ENV(Param,K,M)
+#DVDM_ENVSimplified(Param,K,M)
+#DVDM_EN(Param,K,M)
+#DVDM_ENSimplified(Param,K,M,10**(-11))
+#checking_Glassey(20,2,40,20)
+#checking_DVDM_ENSimplified(20,2,40,20)
+#comparing(20,1,20,10**(-8),10,20)
+#comparing_error(20,2,40,10**(-11),20)
 
 ###############################################################################
 #2ソリトン衝突
@@ -1582,7 +1811,7 @@ def comparing_solitons(Emax,n,times):
     fname = "Emax="+str(Emax)+"N="+str(n) + "GlasseyS.csv"
 
     if not os.path.isfile(fname):
-        time,Rs,Is,Ns = Glassey(Param,K,M,1,2,1)
+        time,Rs,Is,Ns = Glassey(Param,K,M,2)
         pd.DataFrame(time+Rs+Is+Ns).to_csv(fname)
     with open(fname) as f:
         for row in csv.reader(f, quoting=csv.QUOTE_NONNUMERIC):
@@ -1593,9 +1822,9 @@ def comparing_solitons(Emax,n,times):
             if row[0] in [2*M+3+i*M//times for i in range(times+1)]:
                 NG.append(np.array(row[1:]))
 
-    fname = "Emax="+str(Emax)+"N="+str(n) + "DVDMS_ana.csv"
+    fname = "Emax="+str(Emax)+"N="+str(n) + "ENSDVDMS_ana.csv"
     if not os.path.isfile(fname):
-        time,Rs,Ns,Is,Vs = DVDM_Glassey(Param,K,M,10**(-8),2,1)
+        time,Rs,Ns,Is,Vs = DVDM_ENSimplified(Param,K,M,10**(-8),2)
         pd.DataFrame(time+Rs+Ns+Is+Vs).to_csv(fname)
     with open(fname) as f:
         for row in csv.reader(f, quoting=csv.QUOTE_NONNUMERIC):
@@ -1747,7 +1976,7 @@ def comparing_solitons_GlasseyType(Emax,n,times):
     plt.show()
 
 # あるtypeでの (G)
-def comparing_solitons_GlasseyTime(Emax,m,times,NVtype):
+def comparing_solitons_GlasseyTime(Emax,m,times,NVtype=1):
     Param = parameters(20,1,Emax,10**(-8))
     T = Param[-2]
 
@@ -1820,12 +2049,12 @@ def comparing_solitons_DVDMType(Emax,n,times):
     RD2,ID2,ND2,VD2 = [],[],[],[]
     RD3,ID3,ND3,VD3 = [],[],[],[]
 
-    fbase = "Emax="+str(Emax)+"N="+str(n) + "DVDMS"
+    fbase = "Emax="+str(Emax)+"N="+str(n) + "ENSDVDMS"
 
     fname = fbase + "_sup" + ".csv"
 
     if not os.path.isfile(fname):
-        time,Rs,Ns,Is,Vs = DVDM_Glassey(Param,K,M,10**(-8),2,1)
+        time,Rs,Ns,Is,Vs = DVDM_ENSimplified(Param,K,M,10**(-8),2,1)
         pd.DataFrame(time+Rs+Ns+Is+Vs).to_csv(fname)
     with open(fname) as f:
         for row in csv.reader(f, quoting=csv.QUOTE_NONNUMERIC):
@@ -1841,7 +2070,7 @@ def comparing_solitons_DVDMType(Emax,n,times):
     fname = fbase + "_ana" + ".csv"
 
     if not os.path.isfile(fname):
-        time,Rs,Ns,Is,Vs = DVDM_Glassey(Param,K,M,10**(-8),2,2)
+        time,Rs,Ns,Is,Vs = DVDM_ENSimplified(Param,K,M,10**(-8),2,2)
         pd.DataFrame(time+Rs+Ns+Is+Vs).to_csv(fname)
     with open(fname) as f:
         for row in csv.reader(f, quoting=csv.QUOTE_NONNUMERIC):
@@ -1857,7 +2086,7 @@ def comparing_solitons_DVDMType(Emax,n,times):
     fname = fbase + "_num" + ".csv"
 
     if not os.path.isfile(fname):
-        time,Rs,Ns,Is,Vs = DVDM_Glassey(Param,K,M,10**(-8),2,3)
+        time,Rs,Ns,Is,Vs = DVDM_ENSimplified(Param,K,M,10**(-8),2,3)
         pd.DataFrame(time+Rs+Ns+Is+Vs).to_csv(fname)
     with open(fname) as f:
         for row in csv.reader(f, quoting=csv.QUOTE_NONNUMERIC):
@@ -1911,7 +2140,7 @@ def comparing_solitons_DVDMType(Emax,n,times):
     plt.show()
 
 # あるtypeでの (D)
-def comparing_solitons_DVDMTime(Emax,m,times,NVtype):
+def comparing_solitons_DVDMTime(Emax,m,times,NVtype=2):
     Param = parameters(20,1,Emax,10**(-8))
     T = Param[-2]
 
@@ -1924,7 +2153,7 @@ def comparing_solitons_DVDMTime(Emax,m,times,NVtype):
     for j in range(m):
         n = ns[j]; K = Ks[j]; M = Ms[j]
         dx = 20/K; dt = T/M
-        text = "DVDMS"
+        text = "ENSDVDMS"
         if NVtype == 1:
             text = text + "_sup"
         if NVtype == 2:
@@ -1936,7 +2165,7 @@ def comparing_solitons_DVDMTime(Emax,m,times,NVtype):
         RD,ID,ND,VD = [],[],[],[]
 
         if not os.path.isfile(fname):
-            time,Rs,Is,Ns,Vs = DVDM_Glassey(Param,K,M,10**(-8),2,NVtype)
+            time,Rs,Is,Ns,Vs = DVDM_ENSimplified(Param,K,M,10**(-8),2,NVtype)
             pd.DataFrame(time+Rs+Is+Ns+Vs).to_csv(fname)
         with open(fname) as f:
             for row in csv.reader(f, quoting=csv.QUOTE_NONNUMERIC):
@@ -1979,17 +2208,17 @@ def comparing_solitons_DVDMTime(Emax,m,times,NVtype):
 # 資料用
 # (G),(D) を Δt = 1/10, 1/20 (,1/40)
 # check == 1: (G) を (D) より1段階先の Δt = 1/40 まで考える場合
-def comparing_solitons_data(Emax,check):
+def comparing_solitons_data(Emax,m,check):
     Param = parameters(20,1,Emax,10**(-8))
     T = Param[-2]
 
-    ns = [2**j*10 for j in range(2+check)]
+    ns = [2**j*10 for j in range(m+check)]
     R,I,N = [],[],[]
-    Ks = [math.floor(20*ns[j]) for j in range(2+check)]
-    Ms = [math.floor(T*ns[j]) for j in range(2+check)]
-    xs = [np.linspace(0, 160, 8*Ks[j]) for j in range(2+check)]
+    Ks = [math.floor(20*ns[j]) for j in range(m+check)]
+    Ms = [math.floor(T*ns[j]) for j in range(m+check)]
+    xs = [np.linspace(0, 160, 8*Ks[j]) for j in range(m+check)]
 
-    for j in range(2+check):
+    for j in range(m+check):
         n = ns[j]; K = Ks[j]; M = Ms[j]
         dx = 20/K; dt = T/M
         fname = "Emax="+str(Emax)+"N="+str(n) + "GlasseyS" + ".csv"
@@ -1997,36 +2226,40 @@ def comparing_solitons_data(Emax,check):
         RG,IG,NG = [],[],[]
 
         if not os.path.isfile(fname):
-            time,Rs,Is,Ns = Glassey(Param,K,M,1,2,1)
+            time,Rs,Is,Ns = Glassey(Param,K,M,2,1)
             pd.DataFrame(time+Rs+Is+Ns).to_csv(fname)
-        with open(fname) as f:
-            for row in csv.reader(f, quoting=csv.QUOTE_NONNUMERIC):
-                if row[0] == M+1:
-                    RG.append(np.array(row[1:]))
-                if row[0] == 2*M+2:
-                    IG.append(np.array(row[1:]))
-                if row[0] == 3*M+3:
-                    NG.append(np.array(row[1:]))
+            RG.append(Rs[-1]); IG.append(Is[-1]); NG.append(Ns[-1])
+        else:
+            with open(fname) as f:
+                for row in csv.reader(f, quoting=csv.QUOTE_NONNUMERIC):
+                    if row[0] == M+1:
+                        RG.append(np.array(row[1:]))
+                    if row[0] == 2*M+2:
+                        IG.append(np.array(row[1:]))
+                    if row[0] == 3*M+3:
+                        NG.append(np.array(row[1:]))
         R.append(RG); I.append(IG); N.append(NG)
 
-    for j in range(2):
+    for j in range(m):
         n = ns[j]; K = Ks[j]; M = Ms[j]
         dx = 20/K; dt = T/M
-        fname = "Emax="+str(Emax)+"N="+str(n) + "DVDMS_ana.csv"
+        fname = "Emax="+str(Emax)+"N="+str(n) + "ENSDVDMS_ana.csv"
         print(fname)
         RD,ID,ND = [],[],[]
 
         if not os.path.isfile(fname):
-            time,Rs,Is,Ns,Vs = DVDM_Glassey(Param,K,M,10**(-8),2,3)
+            time,Rs,Is,Ns,Vs = DVDM_ENSimplified(Param,K,M,10**(-8),2,2)
             pd.DataFrame(time+Rs+Is+Ns+Vs).to_csv(fname)
-        with open(fname) as f:
-            for row in csv.reader(f, quoting=csv.QUOTE_NONNUMERIC):
-                if row[0] == M+1:
-                    RD.append(np.array(row[1:]))
-                if row[0] == 2*M+2:
-                    ID.append(np.array(row[1:]))
-                if row[0] == 3*M+3:
-                    ND.append(np.array(row[1:]))
+            RG.append(Rs[-1]); IG.append(Is[-1]); NG.append(Ns[-1])
+        else:
+            with open(fname) as f:
+                for row in csv.reader(f, quoting=csv.QUOTE_NONNUMERIC):
+                    if row[0] == M+1:
+                        RD.append(np.array(row[1:]))
+                    if row[0] == 2*M+2:
+                        ID.append(np.array(row[1:]))
+                    if row[0] == 3*M+3:
+                        ND.append(np.array(row[1:]))
         R.append(RD); I.append(ID); N.append(ND)
 
     fig = plt.figure()
@@ -2036,29 +2269,135 @@ def comparing_solitons_data(Emax,check):
     ax.append(fig.add_subplot(1, 4, 3))
     ax.append(fig.add_subplot(1, 4, 4))
 
-    E = [[(R[j][k]**2+I[j][k]**2)**0.5 for k in range(len(R[0]))] for j in range(4+check)]
+    E = [[(R[j][k]**2+I[j][k]**2)**0.5 for k in range(len(R[0]))] for j in range(2*m+check)]
 
     #marks = ['o','s','v']
     #marker=marks[j],markersize=3,c='black', markevery = 10
-    for j in range(2+check):
+    for j in range(m+check):
         l = "G,Δt="+str(1/ns[j])
         ax[0].plot(xs[j], R[j][0], label = l)
         ax[1].plot(xs[j], I[j][0], label = l)
         ax[2].plot(xs[j], E[j][0], label = l)
         ax[3].plot(xs[j], N[j][0], label = l)
-    for j in range(2):
+    for j in range(m):
         l = "D,Δt="+str(1/ns[j])
-        ax[0].plot(xs[j], R[j+2+check][0], label = l)
-        ax[1].plot(xs[j], I[j+2+check][0], label = l)
-        ax[2].plot(xs[j], E[j+2+check][0], label = l)
-        ax[3].plot(xs[j], N[j+2+check][0], label = l)
+        ax[0].plot(xs[j], R[j+m+check][0], label = l)
+        ax[1].plot(xs[j], I[j+m+check][0], label = l)
+        ax[2].plot(xs[j], E[j+m+check][0], label = l)
+        ax[3].plot(xs[j], N[j+m+check][0], label = l)
     ax[0].set_ylabel("ReE"); ax[1].set_ylabel("ImE"); ax[2].set_ylabel("|E|"); ax[3].set_ylabel("N")
     ax[0].legend(); ax[1].legend(); ax[2].legend(); ax[3].legend()
     plt.show()
 
-#comparing_solitons(3,10,1,False)
+def comparing_Glasseyconv(Emax,n1,n2):
+    Param = parameters(20,1,Emax,10**(-8))
+    T = Param[-2]
+    K1 = math.floor(20*n1); M1 = math.floor(T*n1)
+    K2 = math.floor(20*n2); M2 = math.floor(T*n2)
+    r = n2//n1
+    dx = 20/K1
+
+    RG1,IG1,NG1 = [],[],[]
+    RG2,IG2,NG2 = [],[],[]
+
+    fname1 = "Emax="+str(Emax)+"N="+str(n1) + "GlasseyS.csv"
+    fname2 = "Emax="+str(Emax)+"N="+str(n2) + "GlasseyS.csv"
+
+    if not os.path.isfile(fname1):
+        time,Rs,Is,Ns = Glassey(Param,K1,M1,2)
+        pd.DataFrame(time+Rs+Is+Ns).to_csv(fname1)
+        Rs,Is,Ns = [],[],[]
+    if not os.path.isfile(fname2):
+        time,Rs,Is,Ns = Glassey(Param,K2,M2,2)
+        pd.DataFrame(time+Rs+Is+Ns).to_csv(fname2)
+        Rs,Is,Ns = [],[],[]
+
+    K1 *= 8
+
+    with open(fname1) as f:
+        for row in csv.reader(f, quoting=csv.QUOTE_NONNUMERIC):
+            if row[0] in [i+1 for i in range(M1+1)]:
+                RG1.append(np.array(row[1:]))
+            if row[0] in [M1+2+i for i in range(M1+1)]:
+                IG1.append(np.array(row[1:]))
+            if row[0] in [2*M1+3+i for i in range(M1+1)]:
+                NG1.append(np.array(row[1:]))
+    with open(fname2) as f:
+        for row in csv.reader(f, quoting=csv.QUOTE_NONNUMERIC):
+            if row[0] in [r*i+1 for i in range(M1+1)]:
+                RG2.append(np.array(row[1:]))
+            if row[0] in [M2+2+r*i for i in range(M1+1)]:
+                IG2.append(np.array(row[1:]))
+            if row[0] in [2*M2+3+r*i for i in range(M1+1)]:
+                NG2.append(np.array(row[1:]))
+
+    meE = 0; meN = 0; mrE = 0; mrN = 0
+    for i in range(M1):
+        RG = [RG2[i][r*k] for k in range(K1)]
+        IG = [IG2[i][r*k] for k in range(K1)]
+        NG = [NG2[i][r*k] for k in range(K1)]
+        eE = (dist(RG1[i],RG,dx)**2+dist(IG1[i],IG,dx)**2)**0.5; eN = dist(NG1[i],NG,dx)
+        meE = max(meE,eE); meN = max(meN,eN)
+    print("(G)Δt=",1/n1,1/n2,"の比較")
+    print("各要素の最大誤差:",meE,meN)
+
+def comparing_DVDMconv(Emax,n1,n2):
+    Param = parameters(20,1,Emax,10**(-8))
+    T = Param[-2]
+    K1 = math.floor(20*n1); M1 = math.floor(T*n1)
+    K2 = math.floor(20*n2); M2 = math.floor(T*n2)
+    r = n2//n1
+    dx = 20/K1
+
+    RG1,IG1,NG1 = [],[],[]
+    RG2,IG2,NG2 = [],[],[]
+
+    fname1 = "Emax="+str(Emax)+"N="+str(n1) + "ENSDVDMS_ana.csv"
+    fname2 = "Emax="+str(Emax)+"N="+str(n2) + "GlasseyS.csv"
+
+    if not os.path.isfile(fname1):
+        time,Rs,Is,Ns,Vs = DVDM_ENSimplified(Param,K1,M1,10**(-8),2)
+        pd.DataFrame(time+Rs+Is+Ns+Vs).to_csv(fname1)
+        Rs,Is,Ns,Vs = [],[],[],[]
+    if not os.path.isfile(fname2):
+        time,Rs,Is,Ns = Glassey(Param,K2,M2,2)
+        pd.DataFrame(time+Rs+Is+Ns).to_csv(fname2)
+        Rs,Is,Ns = [],[],[]
+
+    K1 *= 8
+
+    with open(fname1) as f:
+        for row in csv.reader(f, quoting=csv.QUOTE_NONNUMERIC):
+            if row[0] in [i+1 for i in range(M1+1)]:
+                RG1.append(np.array(row[1:]))
+            if row[0] in [M1+2+i for i in range(M1+1)]:
+                IG1.append(np.array(row[1:]))
+            if row[0] in [2*M1+3+i for i in range(M1+1)]:
+                NG1.append(np.array(row[1:]))
+    with open(fname2) as f:
+        for row in csv.reader(f, quoting=csv.QUOTE_NONNUMERIC):
+            if row[0] in [r*i+1 for i in range(M1+1)]:
+                RG2.append(np.array(row[1:]))
+            if row[0] in [M2+2+r*i for i in range(M1+1)]:
+                IG2.append(np.array(row[1:]))
+            if row[0] in [2*M2+3+r*i for i in range(M1+1)]:
+                NG2.append(np.array(row[1:]))
+
+    meE = 0; meN = 0; mrE = 0; mrN = 0
+    for i in range(M1):
+        RG = [RG2[i][r*k] for k in range(K1)]
+        IG = [IG2[i][r*k] for k in range(K1)]
+        NG = [NG2[i][r*k] for k in range(K1)]
+        eE = (dist(RG1[i],RG,dx)**2+dist(IG1[i],IG,dx)**2)**0.5; eN = dist(NG1[i],NG,dx)
+        meE = max(meE,eE); meN = max(meN,eN)
+    print("(D)Δt=",1/n1,"(G)Δt=",1/n2,"の比較")
+    print("各要素の最大誤差:",meE,meN)
+
+#comparing_solitons(3,160,1)
 #comparing_solitons_GlasseyType(0.5,20,1)
-#comparing_solitons_GlasseyTime(1.5,3,1,1)
+#comparing_solitons_GlasseyTime(3,5,1)
 #comparing_solitons_DVDMType(3,20,6)
-#comparing_solitons_DVDMTime(1.5,2,1,3)
-#comparing_solitons_data(0.5,0)
+#comparing_solitons_DVDMTime(3,5,1)
+#comparing_solitons_data(1,4,1)
+#comparing_Glasseyconv(3,40,160)
+#comparing_DVDMconv(3,10,160)
