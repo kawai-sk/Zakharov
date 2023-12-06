@@ -438,6 +438,8 @@ def Glassey(Param,K,M,Stype = 1,NVtype = 1):
     start = time()
 
     R_now = np.array(R_now); I_now = np.array(I_now); N_now = np.array(N_now); N_next = np.array(N_next)
+    diff = sum(N_next-N_now)/K
+    N_next = [N_next[k] - diff for k in range(K)]
     Rs.append(R_now); Is.append(I_now); Ns.append(N_now); Ns.append(N_next)
 
     # ここまでに数値解を計算した時刻
@@ -620,6 +622,7 @@ def Glassey_CondNum(Emax,n,Stype = 1,NVtype = 1):
         # NVtype == 6: (N_t)_1 から数値的に計算される V に対応する N1
         R_now,I_now,N_now,N_next = initial_condition_solitons(Param[1],K,M,10**(-8),NVtype)[:4]
         K *= 8
+    N_next = N_next - (sum(N_next-N_now)/K)*np.array(identity(K))
     Ik = np.identity(K)
     Dx = (1/dx**2)*(-2*Ik + np.eye(K,k=1) + np.eye(K,k=K-1) + np.eye(K,k=-1) + np.eye(K,k=-K+1))
     ID = np.linalg.inv(Ik-0.5*dt**2*Dx)
@@ -1779,7 +1782,7 @@ if False:
 #print(checking_DVDM_Simplified(20,5,160))
 #print(checking_DVDM_ENSimplified(20,2,20))
 
-Emax = 10; n = 10; Param = parameters(20,1,Emax,10**(-8)); T = Param[-2]
+Emax = 1; n = 20; Param = parameters(20,1,Emax,10**(-8)); T = Param[-2]*20
 #T = T/20; Param[-2] = T
 #T = T*20; Param[-2] = T
 K = math.floor(20*n); M = math.floor(T*n)
@@ -1793,7 +1796,7 @@ K = math.floor(20*n); M = math.floor(T*n)
 #checking_Glassey(20,2,40,20)
 #checking_DVDM_ENSimplified(20,2,40,20)
 #comparing(20,1,20,10**(-8),10,20)
-#comparing_error(20,2,40,10**(-11),20)
+comparing_error(20,2,40,10**(-8),20)
 
 ###############################################################################
 #2ソリトン衝突
