@@ -52,7 +52,7 @@ def parameters(L,m,Emax,eps):
     T = L/v; phi = v/2
     return [L,Emax,v,q,N_0,u,T,phi]
 
-# Emax < 0.17281841279256 を目安に ellipk(q) が q<0 となり機能しなくなる
+# Emax < 0.17281841279256 を目安に ellipk(q) が q < 0 となり機能しなくなる
 #print(parameters(20,1,10,10**(-8)))
 ###############################################################################
 
@@ -80,9 +80,9 @@ def analytical_solutions(Param,t,K):
     return R,I,N,Nt,V,dV
 
 ###############################################################################
-#初期条件
+#初期条件の計算
 
-#差分
+#差分作用素
 def FD(v,dx):
     K = len(v)
     return np.array([(v[(k+1)%K] - v[k])/dx for k in range(K)])
@@ -108,6 +108,8 @@ def energy_DVDM(R,I,N,V,dx):
         Energy += N[i]*(R[i]**2 + I[i]**2)*dx
     return Energy
 
+# Glassey での V を計算する方法を複数検討
+# DDI,DxI,Dx2I は D_x^2 の逆行列
 def energy_Glassey(R,I,N1,N2,DDI,dt,dx):
     K = len(R)
     dN = np.array([(N2[k] - N1[k])/dt for k in range(1,K)])
@@ -417,7 +419,7 @@ def initial_condition_solitons(Emax,K,M,eps,NVtype):
 #スキーム本体
 
 # Glassey スキーム
-def Glassey(Param,K,M,Stype = 1,NVtype = 1):
+def Glassey(Param,K,M,Stype = 1,NVtype = 1,Ntype = 2):
     start = time()
     L = Param[0]; T = Param[-2]
     dx = L/K; dt = T/M #print(dt,dx)
@@ -439,7 +441,9 @@ def Glassey(Param,K,M,Stype = 1,NVtype = 1):
 
     R_now = np.array(R_now); I_now = np.array(I_now); N_now = np.array(N_now); N_next = np.array(N_next)
     diff = sum(N_next-N_now)/K
-    N_next = [N_next[k] - diff for k in range(K)]
+    if Ntype == 2:
+        # Vを適切に選べるような N1
+        N_next = [N_next[k] - diff for k in range(K)]
     Rs.append(R_now); Is.append(I_now); Ns.append(N_now); Ns.append(N_next)
 
     # ここまでに数値解を計算した時刻
@@ -511,7 +515,7 @@ def Glassey(Param,K,M,Stype = 1,NVtype = 1):
 
     return [[str(end-start)]+[0 for i in range(len(Rs[0])-1)]],Rs,Is,Ns
 
-def checking_Glassey(L,Emax,n,short = False):
+def checking_Glassey(L,Emax,n,short = False,Ntype = 2):
     Param = parameters(L,1,Emax,eps)
     if short == True:
         Param[-2] = Param[-2]/L
@@ -530,11 +534,14 @@ def checking_Glassey(L,Emax,n,short = False):
     else:
         if short != False:
             fname = fname + str(short)
-    fname = fname + "Glassey.csv"
+    if Ntype == 1:
+         fname = fname + "GlasseyP.csv"
+    elif Ntype == 2:
+        fname = fname + "GlasseyN.csv"
     print(fname)
 
     if not os.path.isfile(fname):
-        time,RG,IG,NG = Glassey(Param,K,M)
+        time,RG,IG,NG = Glassey(Param,K,M,Ntype = Ntype)
         pd.DataFrame(time+RG+IG+NG).to_csv(fname)
     with open(fname) as f:
         for row in csv.reader(f, quoting=csv.QUOTE_NONNUMERIC):
@@ -606,38 +613,6 @@ def checking_Glassey(L,Emax,n,short = False):
     print("各要素の最大誤差:",meE,meN)
     print("各要素の最大誤差比:",mrE,mrN)
 
-def Glassey_CondNum(Emax,n,Stype = 1,NVtype = 1):
-    Param = parameters(20,1,Emax,10**(-8))
-    L = Param[0]; T = Param[-2]
-    K = math.floor(20*n); M = math.floor(T*n)
-    dx = L/K; dt = T/M #print(dt,dx)
-
-    # 数値解の記録
-    if Stype == 1:
-        R_now,I_now,N_now,N_next = initial_condition(Param,K,M)[:4]
-    if Stype == 2:
-        # NVtype == 1: 1ソリトン解の重ね合わせの (N_t)_1 に対応する N1
-        # NVtype == 4: 1ソリトン解の重ね合わせの V に対応する N1
-        # NVtype == 5: (N_t)_1 から解析的に計算される V に対応する N1
-        # NVtype == 6: (N_t)_1 から数値的に計算される V に対応する N1
-        R_now,I_now,N_now,N_next = initial_condition_solitons(Param[1],K,M,10**(-8),NVtype)[:4]
-        K *= 8
-    N_next = N_next - (sum(N_next-N_now)/K)*np.array(identity(K))
-    Ik = np.identity(K)
-    Dx = (1/dx**2)*(-2*Ik + np.eye(K,k=1) + np.eye(K,k=K-1) + np.eye(K,k=-1) + np.eye(K,k=-K+1))
-    ID = np.linalg.inv(Ik-0.5*dt**2*Dx)
-
-    Dn = np.diag([N_now[k]+N_next[k] for k in range(K)])
-    D = dt*(0.5*Dx - 0.25*Dn)
-    A = np.block([[Ik,D],[-D,Ik]])
-    print("Emax=",Emax,"n=",n)
-    print("共通で扱う:",np.linalg.cond(Ik-0.5*dt**2*Dx))
-    print("t=0:",np.linalg.cond(A))
-
-    DD = -2*np.eye(K-1,k=0) + np.eye(K-1,k=1) + np.eye(K-1,k=-1)
-    print("Vの算出:",np.linalg.cond(DD))
-
-#Glassey_CondNum(3,10,2)
 
 # DVDMスキーム本体
 # Newton法の初期値をGlasseyで求める
@@ -1648,7 +1623,8 @@ def comparing_error(L,Emax,n,eps = 10**(-8),short = False):
         tNorm,tEnergy = true_invariants(Emax,10**(-3))
         print("保存量真値:",tNorm,tEnergy)
 
-    RG,IG,NG = [],[],[]
+    RGP,IGP,NGP = [],[],[]
+    RGN,IGN,NGN = [],[],[]
     RD,ID,ND,VD = [],[],[],[]
 
     fname = "L="+str(L)+"Emax="+str(Emax)+"N="+str(n)
@@ -1657,21 +1633,43 @@ def comparing_error(L,Emax,n,eps = 10**(-8),short = False):
     else:
         if short != False:
             fname = fname + str(short)
-    fname = fname + "Glassey.csv"
+    fname = fname + "GlasseyP.csv"
     print(fname)
 
     if not os.path.isfile(fname):
-        time,RG,IG,NG = Glassey(Param,K,M)
-        pd.DataFrame(time+RG+IG+NG).to_csv(fname)
+        time,RGP,IGP,NGP = Glassey(Param,K,M,Ntype = 1)
+        pd.DataFrame(time+RGP+IGP+NGP).to_csv(fname)
     else:
         with open(fname) as f:
             for row in csv.reader(f, quoting=csv.QUOTE_NONNUMERIC):
                 if row[0] in [i+1 for i in range(M+1)]:
-                    RG.append(np.array(row[1:]))
+                    RGP.append(np.array(row[1:]))
                 if row[0] in [M+2+i for i in range(M+1)]:
-                    IG.append(np.array(row[1:]))
+                    IGP.append(np.array(row[1:]))
                 if row[0] in [2*M+3+i for i in range(M+1)]:
-                    NG.append(np.array(row[1:]))
+                    NGP.append(np.array(row[1:]))
+
+    fname = "L="+str(L)+"Emax="+str(Emax)+"N="+str(n)
+    if short == True:
+        fname = fname + "short"
+    else:
+        if short != False:
+            fname = fname + str(short)
+    fname = fname + "GlasseyN.csv"
+    print(fname)
+
+    if not os.path.isfile(fname):
+        time,RGN,IGN,NGN = Glassey(Param,K,M,Ntype = 2)
+        pd.DataFrame(time+RGN+IGN+NGN).to_csv(fname)
+    else:
+        with open(fname) as f:
+            for row in csv.reader(f, quoting=csv.QUOTE_NONNUMERIC):
+                if row[0] in [i+1 for i in range(M+1)]:
+                    RGN.append(np.array(row[1:]))
+                if row[0] in [M+2+i for i in range(M+1)]:
+                    IGN.append(np.array(row[1:]))
+                if row[0] in [2*M+3+i for i in range(M+1)]:
+                    NGN.append(np.array(row[1:]))
 
     fname = "L="+str(L)+"Emax="+str(Emax)+"N="+str(n)
     if short == True:
@@ -1727,31 +1725,39 @@ def comparing_error(L,Emax,n,eps = 10**(-8),short = False):
         pd.DataFrame(tRs+tIs+tNs+tVs).to_csv(fname)
 
     print("(dx**2 + dt**2)**0.5:",(dx**2 + dt**2)**0.5)
-    meEG = 0; mrEG = 0; meNG = 0; mrNG = 0
+    meEGP = 0; mrEGP = 0; meNGP = 0; mrNGP = 0
+    meEGN = 0; mrEGN = 0; meNGN = 0; mrNGN = 0
     meED = 0; mrED = 0; meND = 0; mrND = 0
-    meEGs = [0]; meNGs = [0]; meEDs = [0]; meNDs = [0]
+    meEGPs = [0]; meNGPs = [0]; meEGNs = [0]; meNGNs = [0]; meEDs = [0]; meNDs = [0]
     TIMES = [0]
     for i in range(len(tRs)):
         tnorm = (norm(tRs[i],dx) + norm(tIs[i],dx))**0.5
 
-        eEG = (dist(RG[i],tRs[i],dx)**2+dist(IG[i],tIs[i],dx)**2)**0.5; eNG = dist(NG[i],tNs[i],dx)
+        eEGP = (dist(RGP[i],tRs[i],dx)**2+dist(IGP[i],tIs[i],dx)**2)**0.5; eNGP = dist(NGP[i],tNs[i],dx)
+        eEGN = (dist(RGN[i],tRs[i],dx)**2+dist(IGN[i],tIs[i],dx)**2)**0.5; eNGN = dist(NGN[i],tNs[i],dx)
         eED = (dist(RD[i],tRs[i],dx)**2+dist(ID[i],tIs[i],dx)**2)**0.5; eND = dist(ND[i],tNs[i],dx)
-        meEG = max(meEG,eEG); meNG = max(meNG,eNG)
+        meEGP = max(meEGP,eEGP); meNGP = max(meNGP,eNGP)
+        meEGN = max(meEGN,eEGN); meNGN = max(meNGN,eNGN)
         meED = max(meED,eED); meND = max(meND,eND)
-        mrEG = max(mrEG,eEG/tnorm); mrNG = max(mrNG,eNG/(norm(tNs[i],dx)**0.5))
+        mrEGP = max(mrEGP,eEGP/tnorm); mrNGP = max(mrNGP,eNGP/(norm(tNs[i],dx)**0.5))
+        mrEGN = max(mrEGN,eEGN/tnorm); mrNGN = max(mrNGN,eNGN/(norm(tNs[i],dx)**0.5))
         mrED = max(mrED,eED/tnorm); mrND = max(mrND,eND/(norm(tNs[i],dx)**0.5))
-        meEGs.append(meEG); meNGs.append(meNG); TIMES.append((i+1)*dt)
+        meEGPs.append(meEGP); meNGPs.append(meNGP)
+        meEGNs.append(meEGN); meNGNs.append(meNGN)
         meEDs.append(meED); meNDs.append(meND)
+        TIMES.append((i+1)*dt)
     fig = plt.figure()
     axR = fig.add_subplot(1, 2, 1)
     axN = fig.add_subplot(1, 2, 2)
-    axR.plot(TIMES,meEGs,label="G,E",ls = "-",color="k")
-    axR.plot(TIMES,meEDs,label="D,E",ls = "--",color="k")
-    axN.plot(TIMES,meNGs,label="G,N",ls = "-",color="k")
-    axN.plot(TIMES,meNDs,label="D,N",ls = "--",color="k")
+    axR.plot(TIMES,meEGPs,label="GP",ls = "-",color="k")
+    axR.plot(TIMES,meEGNs,label="GN",ls = "--",color="k")
+    axR.plot(TIMES,meEDs,label="D",ls = "-.",color="k")
+    axN.plot(TIMES,meNGPs,label="GP",ls = "-",color="k")
+    axN.plot(TIMES,meNGPs,label="GN",ls = "--",color="k")
+    axN.plot(TIMES,meNDs,label="D",ls = "-.",color="k")
     axR.legend(); axN.legend()
     axR.set_xlabel("t"); axN.set_xlabel("t")
-    axR.set_ylabel("max_error"); axN.set_ylabel("max_error")
+    axR.set_ylabel("max_error_E"); axN.set_ylabel("max_error_N")
     plt.show()
 
 #initial_condition(Param,K,M,10**(-8),1)
@@ -1793,10 +1799,10 @@ K = math.floor(20*n); M = math.floor(T*n)
 #DVDM_ENVSimplified(Param,K,M)
 #DVDM_EN(Param,K,M)
 #DVDM_ENSimplified(Param,K,M,10**(-11))
-#checking_Glassey(20,2,40,20)
+#checking_Glassey(20,5,80,True,2)
 #checking_DVDM_ENSimplified(20,2,40,20)
 #comparing(20,1,20,10**(-8),10,20)
-comparing_error(20,2,40,10**(-8),20)
+#comparing_error(20,2,40,10**(-8),20)
 
 ###############################################################################
 #2ソリトン衝突
@@ -2292,7 +2298,7 @@ def comparing_solitons_data(Emax,m,check):
     ax[0].legend(); ax[1].legend(); ax[2].legend(); ax[3].legend()
     plt.show()
 
-def comparing_Glasseyconv(Emax,n1,n2):
+def comparing_Glasseyconv(Emax,n1,n2,Ntype = 2):
     Param = parameters(20,1,Emax,10**(-8))
     T = Param[-2]
     K1 = math.floor(20*n1); M1 = math.floor(T*n1)
@@ -2303,11 +2309,15 @@ def comparing_Glasseyconv(Emax,n1,n2):
     RG1,IG1,NG1 = [],[],[]
     RG2,IG2,NG2 = [],[],[]
 
-    fname1 = "Emax="+str(Emax)+"N="+str(n1) + "GlasseyS.csv"
-    fname2 = "Emax="+str(Emax)+"N="+str(n2) + "GlasseyS.csv"
+    fname1 = "Emax="+str(Emax)+"N="+str(n1)
+    if Ntype == 1:
+        fname1 = fname1 + "GlasseyPS.csv"
+    elif Ntype == 2:
+        fname1 = fname1 + "GlasseyNS.csv"
+    fname2 = "Emax="+str(Emax)+"N="+str(n2) + "GlasseyNS.csv"
 
     if not os.path.isfile(fname1):
-        time,Rs,Is,Ns = Glassey(Param,K1,M1,2)
+        time,Rs,Is,Ns = Glassey(Param,K1,M1,2,Ntype = Ntype)
         pd.DataFrame(time+Rs+Is+Ns).to_csv(fname1)
         Rs,Is,Ns = [],[],[]
     if not os.path.isfile(fname2):
@@ -2341,7 +2351,10 @@ def comparing_Glasseyconv(Emax,n1,n2):
         NG = [NG2[i][r*k] for k in range(K1)]
         eE = (dist(RG1[i],RG,dx)**2+dist(IG1[i],IG,dx)**2)**0.5; eN = dist(NG1[i],NG,dx)
         meE = max(meE,eE); meN = max(meN,eN)
-    print("(G)Δt=",1/n1,1/n2,"の比較")
+    if Ntype == 1:
+        print("(GP)Δt=",1/n1,"(GN)Δt=",1/n2,"の比較")
+    elif Ntype == 2:
+        print("(GN)Δt=",1/n1,"(GN)Δt=",1/n2,"の比較")
     print("各要素の最大誤差:",meE,meN)
 
 def comparing_DVDMconv(Emax,n1,n2):
@@ -2356,7 +2369,7 @@ def comparing_DVDMconv(Emax,n1,n2):
     RG2,IG2,NG2 = [],[],[]
 
     fname1 = "Emax="+str(Emax)+"N="+str(n1) + "ENSDVDMS_ana.csv"
-    fname2 = "Emax="+str(Emax)+"N="+str(n2) + "GlasseyS.csv"
+    fname2 = "Emax="+str(Emax)+"N="+str(n2) + "GlasseyNS.csv"
 
     if not os.path.isfile(fname1):
         time,Rs,Is,Ns,Vs = DVDM_ENSimplified(Param,K1,M1,10**(-8),2)
@@ -2393,7 +2406,7 @@ def comparing_DVDMconv(Emax,n1,n2):
         NG = [NG2[i][r*k] for k in range(K1)]
         eE = (dist(RG1[i],RG,dx)**2+dist(IG1[i],IG,dx)**2)**0.5; eN = dist(NG1[i],NG,dx)
         meE = max(meE,eE); meN = max(meN,eN)
-    print("(D)Δt=",1/n1,"(G)Δt=",1/n2,"の比較")
+    print("(D)Δt=",1/n1,"(GN)Δt=",1/n2,"の比較")
     print("各要素の最大誤差:",meE,meN)
 
 #comparing_solitons(3,160,1)
@@ -2402,5 +2415,6 @@ def comparing_DVDMconv(Emax,n1,n2):
 #comparing_solitons_DVDMType(3,20,6)
 #comparing_solitons_DVDMTime(3,5,1)
 #comparing_solitons_data(1,4,1)
-#comparing_Glasseyconv(3,40,160)
-#comparing_DVDMconv(3,10,160)
+comparing_Glasseyconv(2,40,80,1)
+#comparing_Glasseyconv(2,40,80,2)
+#comparing_DVDMconv(2,40,80)
